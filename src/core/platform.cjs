@@ -5,7 +5,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const exec = promisify(execFile);
 const { noLinks, fail } = require('./safety.cjs');
-const AC = /easyanticheat|easyanticheat_eos|battleye|beservice|bedaisy|xigncode|xhunter|x3\.xem|xcorona|ace[-_ ]?(?:base|guard|service|driver|launcher)|anti.?cheat.?expert|anticheatexpert|tencentprotect|tensafe|vgc|vgk|vanguard|nprotect|gameguard|fairfight/i;
+const AC = /easyanticheat|easyanticheat_eos|battleye|beservice|bedaisy|xigncode|xhunter|x3\.xem|xcorona|(?:^|[^a-z])ace[-_ ]?(?:base|guard|service|driver|launcher)|anti.?cheat.?expert|anticheatexpert|tencentprotect|tensafe|vgc|vgk|vanguard|nprotect|gameguard|fairfight/i;
 const PROXIES = new Set(['dxgi.dll', 'd3d12.dll', 'd3d11.dll', 'd3d9.dll', 'dinput8.dll', 'winmm.dll', 'version.dll', 'opengl32.dll', 'vulkan-1.dll']);
 const APIS = ['DX11', 'DX12', 'Vulkan', 'OpenGL'];
 async function peInfo(file) {

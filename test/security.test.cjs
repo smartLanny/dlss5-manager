@@ -108,6 +108,10 @@ test('known online Steam ID cannot be overridden to offline', async t => {
   const report = await scanGame(game, engine.root);
   assert.ok(report.blockers.some(b => b.includes('修改分类不能解除')));
 });
+test('ACE detection respects name boundaries and does not flag Windows interface services', () => {
+  for (const name of ['nsi Network Store Interface Service', 'Device Interface Service', 'InterfaceService']) assert.equal(AC.test(name), false, name);
+  for (const name of ['ACE-BASE', 'ACE-Service', 'ACEGuard', 'Game_ACE-Launcher', 'BEService', 'EasyAntiCheat_EOS']) assert.equal(AC.test(name), true, name);
+});
 test('native process and service enumeration returns structured Windows safety result', { skip: process.platform !== 'win32' }, async t => {
   const root = await temp(t); let diagnostic = '';
   const result = await environment(root, path.join(root, 'NotRunningSyntheticGame.exe'), e => { diagnostic = String(e.stderr || e.message).slice(0, 1800); });

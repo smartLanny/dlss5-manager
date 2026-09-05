@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, protocol, net, session } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -107,6 +107,19 @@ function registerHandlers() {
     if (picked.canceled) return null;
     await durableWrite(picked.filePath, await engine.diagnostic()); return true;
   }, true);
+  handle('open-game-folder', async ({ gameId }) => {
+    const game = engine.game(gameId);
+    const folder = await assertGameRoot(game.exe ? path.dirname(game.exe) : game.scanRoot, engine.root);
+    const error = await shell.openPath(folder);
+    if (error) fail('OPEN_FOLDER_FAILED', '无法打开游戏文件夹，请检查目录是否仍然存在。');
+    return true;
+  });
+  handle('copy-game-path', async ({ gameId }) => {
+    const game = engine.game(gameId);
+    await assertGameRoot(game.exe ? path.dirname(game.exe) : game.scanRoot, engine.root);
+    clipboard.writeText(game.exe || game.scanRoot);
+    return true;
+  });
   handle('open-link', async ({ key }) => {
     if (!Object.hasOwn(LINKS, key)) fail('LINK_BLOCKED', '不允许打开此地址。');
     await shell.openExternal(LINKS[key]); return true;

@@ -28,6 +28,8 @@ async function main() {
     await page.locator('.nav-item[data-page="versions"]').click();
     assert.equal(await page.locator('.version-card').count(), 3);
     await page.screenshot({ path: 'output/ui-versions.png' });
+    const previewImage = await application.evaluate(({ nativeImage }, file) => nativeImage.createFromPath(file).resize({ width: 850 }).toJPEG(65).toString('base64'), path.resolve('output/ui-versions.png'));
+    await fs.writeFile('output/ui-preview.jpg', Buffer.from(previewImage, 'base64'));
     await application.evaluate(({ dialog }, filePaths) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths }); }, [addon]);
     await page.locator('[data-import-version="0.3.3.4"]').click();
     await page.locator('#importHash').fill(sha256(pe(4))); await page.locator('#acceptLocal').check();
@@ -37,6 +39,14 @@ async function main() {
     await page.locator('.nav-item[data-page="games"]').click();
     await application.evaluate(({ dialog }, filePaths) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths }); }, [exe]);
     await page.locator('#addGame').click(); await page.waitForFunction(() => !!document.querySelector('#gameApi') && document.body.getAttribute('aria-busy') !== 'true');
+    await application.evaluate(({ shell, clipboard }) => {
+      shell.openPath = async folder => { globalThis.__smokeFolder = folder; return ''; };
+      clipboard.writeText = text => { globalThis.__smokeClipboard = text; };
+    });
+    await page.locator('[data-action="open-folder"]').click(); await page.waitForFunction(() => document.body.getAttribute('aria-busy') !== 'true');
+    assert.equal(await application.evaluate(() => globalThis.__smokeFolder), gameRoot);
+    await page.locator('[data-action="copy-path"]').click(); await page.waitForFunction(() => document.body.getAttribute('aria-busy') !== 'true');
+    assert.equal(await application.evaluate(() => globalThis.__smokeClipboard), exe);
     await page.locator('#gameApi').selectOption('DX12'); await page.waitForFunction(() => document.body.getAttribute('aria-busy') !== 'true');
     await page.locator('#gameKind').selectOption('offline'); await page.waitForFunction(() => document.body.getAttribute('aria-busy') !== 'true');
     await page.locator('#environmentConfirmed').check(); await page.waitForFunction(() => document.body.getAttribute('aria-busy') !== 'true');

@@ -62,7 +62,7 @@ function renderInstall() {
   const gCandidates = g.candidates || [];
   $('installContent').innerHTML = `
     <h3 class="selected-title">${esc(g.name)}</h3><div class="path" title="${esc(g.exe || g.scanRoot)}">${esc(g.exe || g.scanRoot)}</div>
-    <div class="inline-actions"><button class="text-button" data-action="choose-exe">${g.exe ? '更换 EXE' : '选择运行 EXE'}</button><button class="text-button" data-action="find-exes">查找候选 EXE</button></div>
+    <div class="inline-actions"><button class="text-button" data-action="choose-exe">${g.exe ? '更换 EXE' : '选择运行 EXE'}</button><button class="text-button" data-action="find-exes">查找候选 EXE</button><button class="text-button" data-action="open-folder">打开目录</button><button class="text-button" data-action="copy-path">复制路径</button></div>
     ${gCandidates.length > 1 || (!g.exe && gCandidates.length) ? `<label class="field-label">确认运行 EXE<select class="full" id="exeCandidate"><option value="">请选择，不会自动猜测</option>${gCandidates.map((c, i) => `<option value="${i}"${c.path === g.exe ? ' selected' : ''}>${esc(c.path.split(/[\\/]/).slice(-3).join('/'))} (${esc(c.arch)} / ${esc(c.apis.join(',') || 'API 未知')})</option>`).join('')}</select></label>` : ''}
     <div class="installed-line"><span class="tag ${g.installed ? '' : 'neutral'}">${g.installed ? `已安装 ${esc(g.installed.version)}` : '尚未安装'}</span><span>运行兼容性：待验证</span></div>
     <label class="field-label">这次安装哪个版本？<select class="full" id="packageSelect"><option value="">${state.packages.length ? '请选择本地版本' : '请先导入官方 addon'}</option>${pkgOptions}</select></label>
@@ -124,6 +124,8 @@ async function action(name) {
   if (name === 'import') { openImport(); return; }
   if (!game()) { toast('请先选择游戏。', true); return; }
   const id = game().id;
+  if (name === 'open-folder') return run('正在打开游戏目录', () => api('open-game-folder', { gameId: id }));
+  if (name === 'copy-path') return run('正在复制游戏路径', async () => { await api('copy-game-path', { gameId: id }); toast('已复制到剪贴板，仅在你的电脑上操作。'); });
   if (name === 'choose-exe') return run('正在选择游戏 EXE', async () => { await api('choose-exe', { gameId: id }); await refresh(); });
   if (name === 'find-exes') return run('正在查找真正运行的 EXE', async () => { const list = await api('candidates', { gameId: id }); await refresh(); toast(list.length ? `找到 ${list.length} 个候选，请从列表中确认。` : '没有找到合适的候选，请手动选择 EXE。'); });
   if (name === 'scan') return run('正在进行只读安全检查', async () => { const report = await api('scan', { gameId: id }); renderReport(report); $('scanReport').scrollIntoView({ behavior: 'smooth', block: 'start' }); });

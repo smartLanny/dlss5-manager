@@ -27,7 +27,7 @@
 
 | 模块 | Beta 行为 |
 | --- | --- |
-| 游戏库 | Steam 库发现、选择 Steam 库、手动 EXE、候选 EXE 排序、排除常见启动器、API 人工确认 |
+| 游戏库 | Steam 库发现、选择 Steam 库、手动 EXE、候选 EXE 排序、排除常见启动器、API 人工确认、打开目录、复制路径 |
 | 文件检查 | 路径、x86/x64/ARM64、版本、Authenticode 状态、SHA-256、静态依赖、来源线索、管理器归属与风险 |
 | 风险门禁 | 在线类型、部分已知在线 Steam ID、EAC/BattlEye/XIGNCODE/ACE 等目录和运行服务线索、进程/文件占用、不完整扫描 |
 | 本地更新 | 单 addon、标准 ZIP / `.dlss5pkg`、包清单、CRC/SHA-256、架构检查、可选 Ed25519 发布者签名 |
@@ -47,6 +47,8 @@
 - 优先处理 [#5 事务回滚](https://github.com/smartLanny/dlss5-manager/issues/5)、[#1 文件安全](https://github.com/smartLanny/dlss5-manager/issues/1)、[#2 风险门禁](https://github.com/smartLanny/dlss5-manager/issues/2)、[#3 核心 DLL 保护](https://github.com/smartLanny/dlss5-manager/issues/3)。对未知情况保守阻止，而不是假装已验证。
 - [#4 游戏发现](https://github.com/smartLanny/dlss5-manager/issues/4)、[#7 官方主页](https://github.com/smartLanny/dlss5-manager/issues/7)、[#8 独立边界](https://github.com/smartLanny/dlss5-manager/issues/8) 已有实现与对应测试。
 - [#6 更新器](https://github.com/smartLanny/dlss5-manager/issues/6) 本版完成本地组件更新和版本检查，自更新部分保留待办。大范围真机验收未完成的 Issue 不因首个 Beta 发布而全部关闭。
+
+开发期间新增的 [#10 ReShade 开箱即用](https://github.com/smartLanny/dlss5-manager/issues/10) 与 [#11 成熟功能基线](https://github.com/smartLanny/dlss5-manager/issues/11) 已纳入路线图。#10 的受控加载器分发、普通版升级、实际 loader 能力验证尚未实现，不使用“文件复制成功”冒充“插件加载成功”。#11 中的打开目录、复制路径已加入本版；Epic/GOG/Xbox、多语言、封面管理与后端切换仍待后续实现。
 
 ## 开发与构建
 
