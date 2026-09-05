@@ -41,7 +41,7 @@ class Engine {
     await noLinks(this.root);
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
     this.state = await readJson(this.stateFile, { schema: 1, games: [], packages: [] });
-    if (![1, 2, 3].includes(this.state.schema) || !Array.isArray(this.state.games) || !Array.isArray(this.state.packages) || this.state.games.length > 2000 || this.state.packages.length > 1000) fail('STATE_INVALID', '本地管理记录无法读取，未修改任何游戏文件。');
+    if (![1, 2, 3, 4].includes(this.state.schema) || !Array.isArray(this.state.games) || !Array.isArray(this.state.packages) || this.state.games.length > 2000 || this.state.packages.length > 1000) fail('STATE_INVALID', '本地管理记录无法读取，未修改任何游戏文件。');
     for (const g of this.state.games) { validId(g.id); if (typeof g.scanRoot !== 'string') fail('STATE_INVALID', '游戏记录已损坏。'); }
     for (const p of this.state.packages) { validId(p.id); validateManifest(p.manifest); componentForPackage(p); }
     return this;
@@ -64,6 +64,17 @@ class Engine {
       this.state.schema = 3;
     }
     await atomicJson(this.stateFile, this.state);
+  }
+  async ensureLifecycleState() {
+    if (this.state.schema === 4) return;
+    // Older managers ignore retained dependency receipts. Persist their refusal
+    // boundary BEFORE any new transaction can change a game file or ownership.
+    const previous = await readJson(this.stateFile, { schema: 1, games: [], packages: [] });
+    const folder = path.join(this.root, 'metadata-backups');
+    await noLinks(folder); await fs.mkdir(folder, { recursive: true, mode: 0o700 });
+    await durableWrite(path.join(folder, `state-before-lifecycle-${crypto.randomUUID()}.json`), JSON.stringify(previous, null, 2), true);
+    await atomicJson(this.stateFile, { ...this.state, schema: 4 });
+    this.state.schema = 4;
   }
   game(id) { validId(id); const g = this.state.games.find(g => g.id === id); if (!g) fail('GAME_MISSING', '游戏记录不存在，请重新添加。'); return g; }
   package(id) { validId(id); const p = this.state.packages.find(p => p.id === id); if (!p) fail('PACKAGE_MISSING', '请先导入对应版本的 addon。'); validateManifest(p.manifest); componentForPackage(p); return p; }
@@ -134,6 +145,7 @@ class Engine {
       const payload = pkg.manifest.files.find(x => x.role === 'addon');
       if (payload.sha256 !== f.actual || await digestFile(target) !== f.actual) fail('FILE_CHANGED', '保存时文件仍在变化，请关闭其他工具再试。');
       pkg.manifest.version = '0.0.0-local.' + Date.now(); pkg.displayName = '外部修改快照';
+      await this.ensureLifecycleState();
       this.state.packages.push(pkg); await this.save(); // Persist the captured bytes before adopting metadata.
       const txid = crypto.randomUUID(); await fs.mkdir(this.txDir(txid), { recursive: true, mode: 0o700 });
       const j = { schema: 1, id: txid, gameId: g.id, root, operation: 'capture-external', version: pkg.manifest.version, createdAt: new Date().toISOString(), status: 'preparing', beforeInstalled: clone(g.installed), afterInstalled: null,
@@ -256,6 +268,7 @@ class Engine {
         if (c.after && await digestFile(c.source) !== c.after) fail('SOURCE_CHANGED', '源文件校验失败。');
       }
       if (plan.noOp) return { transactionId: null, version: this.package(plan.packageId).manifest.version, operation: 'verify', unchanged: true, noOp: true };
+      await this.ensureLifecycleState();
       const txid = crypto.randomUUID(), dir = this.txDir(txid);
       await noLinks(dir); await fs.mkdir(dir, { recursive: true, mode: 0o700 });
       const journal = { schema: 1, id: txid, gameId: game.id, root: plan.targetRoot, operation: plan.operation, version: plan.packageId ? this.package(plan.packageId).manifest.version : null, createdAt: new Date().toISOString(), status: 'preparing', beforeInstalled: clone(game.installed || null), afterInstalled: null, retainedEnvironment: clone(plan.retainedEnvironment), changes: plan.changes.map(({ source, ...c }) => c) };
@@ -334,6 +347,7 @@ class Engine {
       if (current !== c.before && current !== c.after) fail('EXTERNAL_CHANGE', '安装后文件被其他程序改动。为避免覆盖新内容，已保留文件和备份，停止自动恢复。');
       if (c.before && await digestFile(this.backupPath({ tx: journal.id, index: i })) !== c.before) fail('BACKUP_DAMAGED', '原文件备份校验失败，不能继续恢复。');
     }
+    await this.ensureLifecycleState();
     journal.status = 'restoring'; await atomicJson(this.journalPath(journal.id), journal);
     for (let i = journal.changes.length - 1; i >= 0; i--) {
       const c = journal.changes[i], target = path.join(journal.root, c.name);
