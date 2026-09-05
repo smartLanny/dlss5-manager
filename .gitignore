@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+output/
+playwright-report/
+test-results/
+.DS_Store
+*.log
+*.addon64
+*.addon32
+*.dll
+*.pdb
+*.dlss5pkg
+*.key
+*.pem
+.env*
