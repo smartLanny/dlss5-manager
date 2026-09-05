@@ -1,0 +1,55 @@
+name: Apply reviewed lifecycle state protection
+on:
+  push:
+    branches: ['feat/player-lifecycle-feedback']
+    paths: ['.github/workflows/apply-lifecycle-state.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'smartLanny/dlss5-manager' && github.ref == 'refs/heads/feat/player-lifecycle-feedback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact reviewed public patch and run regressions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '08d586b25b36dae5d0d77260876b45c365795bdb'
+          python3 - <<'PY'
+          import base64,hashlib,json,os,pathlib,subprocess,urllib.request
+          req=urllib.request.Request('https://api.github.com/repos/smartLanny/dlss5-manager/git/blobs/741f74312df8613efbe45656e30537422974f076',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(req,timeout=30) as response: value=json.load(response)
+          raw=base64.b64decode(value['content'])
+          assert hashlib.sha256(raw).hexdigest()=='d49de0396128145dd8976914c65d9dcb915dce4be0aa1b27157829410f74f80d'
+          file='/tmp/lifecycle-state.patch';pathlib.Path(file).write_bytes(raw)
+          allowed={'src/core/engine.cjs','test/lifecycle-state.test.cjs','test/next-engine.test.cjs','docs/LIFECYCLE-NEXT.md'}
+          names={row.split('\t')[-1] for row in subprocess.check_output(['git','apply','--numstat',file],text=True).splitlines()}
+          assert names==allowed
+          subprocess.run(['git','apply','--check','--whitespace=error',file],check=True)
+          subprocess.run(['git','apply','--index','--whitespace=error',file],check=True)
+          assert set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())==allowed
+          PY
+          git diff --cached --check
+          npm run check
+          npm test
+      - name: Commit application-only state protection
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/feat/player-lifecycle-feedback | cut -f1)" = "$EXPECTED_HEAD"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: persist lifecycle format and backup before any game change'
+          git push origin HEAD:refs/heads/feat/player-lifecycle-feedback
