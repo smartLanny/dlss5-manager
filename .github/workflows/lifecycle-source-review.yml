@@ -1,0 +1,23 @@
+name: Lifecycle public source review
+on:
+  push:
+    branches: ['feat/player-lifecycle-feedback']
+    paths: ['.github/workflows/lifecycle-source-review.yml']
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: 8f21ff3afc14297d7ec520cd5e0af185815b2669
+      - run: git archive --format=zip --output=manager-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manager-lifecycle-source
+          path: manager-source.zip
+          retention-days: 3
+          if-no-files-found: error
