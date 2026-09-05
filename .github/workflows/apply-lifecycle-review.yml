@@ -1,0 +1,87 @@
+name: Apply reviewed lifecycle source
+on:
+  push:
+    branches: ['feat/player-lifecycle-feedback']
+    paths: ['.github/workflows/apply-lifecycle-review.yml']
+permissions:
+  contents: write
+concurrency:
+  group: apply-reviewed-lifecycle-source
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'smartLanny/dlss5-manager' && github.ref == 'refs/heads/feat/player-lifecycle-feedback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply only exact reviewed public text files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '199fb8643d682f6ed8e0494802ec5f2ce8559596'
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,pathlib,subprocess,urllib.request
+          shas=['9bf9c7a5fdb5f45674dbe0f091d415eff529ca70','7e4d9b262d4e57ce4e22d66881587977f61caf0a']
+          allowed=set('''README.md docs/COMPATIBILITY.md docs/DISTRIBUTION.md docs/FEEDBACK-CONTRACT.md docs/LIFECYCLE-NEXT.md package-lock.json package.json scripts/smoke.cjs scripts/stage-components.cjs src/core/engine.cjs src/core/feedback-set.cjs src/core/packages.cjs src/core/player.cjs src/core/scanner.cjs src/core/uninstall.cjs src/core/versions.cjs src/feedback-ipc.cjs src/main.cjs src/ui/app.js src/ui/feedback.js src/ui/index.html test/feedback-set.test.cjs test/lifecycle.test.cjs'''.split())
+          parts=[]
+          for sha in shas:
+              req=urllib.request.Request('https://api.github.com/repos/smartLanny/dlss5-manager/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=30) as r: v=json.load(r)
+              assert v['sha']==sha and v['encoding']=='base64'
+              part=base64.b64decode(v['content'])
+              assert hashlib.sha1(b'blob '+str(len(part)).encode()+b'\0'+part).hexdigest()==sha
+              parts.append(part)
+          packed=b''.join(parts)
+          assert len(packed)==20068 and hashlib.sha256(packed).hexdigest()=='fb77252930efd163095163e29dbde585e128e570da19ef798c05c5b763b5152d'
+          d=lzma.LZMADecompressor(memlimit=256*1024*1024)
+          raw=d.decompress(packed,max_length=1024*1024)
+          assert d.eof and not d.unused_data
+          entries=json.loads(raw)
+          assert len(entries)==23 and {e['path'] for e in entries}==allowed
+          prepared={}
+          for e in entries:
+              target=pathlib.Path(e['path'])
+              assert e['path'] in allowed and not any(p.is_symlink() for p in [target,*target.parents])
+              original=target.read_bytes() if target.exists() else None
+              assert (hashlib.sha256(original).hexdigest() if original is not None else None)==e['before'],e['path']
+              lines=(original or b'').decode('utf-8').splitlines(keepends=True)
+              cursor=0
+              for edit in e['edits']:
+                  at=edit['at']; remove=edit['remove']
+                  assert isinstance(at,int) and isinstance(remove,int) and cursor<=at<=len(lines) and 0<=remove<=len(lines)-at
+                  assert isinstance(edit['text'],str) and '\x00' not in edit['text']
+                  cursor=at+remove
+              for edit in reversed(e['edits']): lines[edit['at']:edit['at']+edit['remove']]=edit['text'].splitlines(keepends=True)
+              value=''.join(lines).encode('utf-8')
+              assert hashlib.sha256(value).hexdigest()==e['after'],e['path']
+              prepared[target]=value
+          for target,value in prepared.items():
+              target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(value)
+          subprocess.run(['git','add','--',*sorted(allowed)],check=True)
+          changed=set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())
+          assert changed==allowed
+          print('Verified 23 public application/test/documentation files; no workflow or private binary changes.')
+          PY
+          git diff --cached --check
+          npm run check
+          npm test
+      - name: Commit application changes only to feature branch
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/feat/player-lifecycle-feedback | cut -f1)" = "$EXPECTED_HEAD"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: preserve shared mods during uninstall and unify local feedback'
+          git push origin HEAD:refs/heads/feat/player-lifecycle-feedback
