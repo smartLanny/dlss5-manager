@@ -65,6 +65,7 @@ jobs:
             dist/RELEASE-CONTENTS.json
             output/ui-home.png
             output/ui-home-empty.png
+            output/ui-narrow.png
             output/ui-versions.png
             output/ui-cyberpunk-detail.png
             output/ui-install-complete.png

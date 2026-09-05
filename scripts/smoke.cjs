@@ -46,6 +46,14 @@ async function main() {
     page = await application.firstWindow(); page.setDefaultTimeout(90000); page.on('pageerror', e => errors.push(e.message));
     const idle = () => page.waitForFunction(() => window.manager && document.body.getAttribute('aria-busy') !== 'true', null, { timeout: 30000 }); await idle();
     assert.equal(await page.title(), '装机宅 DLSS5'); assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
+    assert.equal(await page.locator('#communityGroup > div').innerText(), '讨论群1\n905475657'); assert.equal(await page.getByText('更新与公告', { exact: true }).count(), 0);
+    await page.setViewportSize({ width: 960, height: 700 });
+    const narrowLayout = await page.evaluate(() => {
+      const viewport = document.documentElement.clientWidth;
+      const visible = [...document.querySelectorAll('header,.library-toolbar,.recommended,.detail-hero,.detail-readiness,.button-row')].filter(el => getComputedStyle(el).display !== 'none');
+      return { viewport, scrollWidth: document.documentElement.scrollWidth, overflowing: visible.some(el => { const box = el.getBoundingClientRect(); return box.left < -1 || box.right > viewport + 1; }) };
+    });
+    assert.ok(narrowLayout.scrollWidth <= narrowLayout.viewport + 1, 'narrow window has horizontal overflow'); assert.equal(narrowLayout.overflowing, false, 'narrow window content overlaps the viewport'); await page.screenshot({ path: 'output/ui-narrow.png' });
     const prefs = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences()); assert.equal(prefs.sandbox, true); assert.equal(prefs.contextIsolation, true); assert.equal(prefs.nodeIntegration, false);
     assert.equal(await page.locator('#gameApi,#importApi,#importHash,#importVersion,#slotA,#slotB,#saveAB').count(), 0);
     await application.evaluate(({ dialog }, root) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [root] }); }, library);
@@ -56,6 +64,8 @@ async function main() {
     state = await page.evaluate(async () => (await window.manager.state()).value); assert.deepEqual([...new Set(state.packages.map(x => x.manifest.version))].sort(), ['0.3.3.4', '0.4.1r2', '0.4.3r3']);
     await page.screenshot({ path: 'output/ui-versions.png' }); await page.locator('.nav[data-page="games"]').click(); await page.locator(`[data-detail="${gameId}"]`).first().click();
     assert.equal(await page.locator('#pluginVersion optgroup').count(), 3); assert.match(await page.locator('#pluginVersion').evaluate(el => [...el.querySelectorAll('optgroup')].map(x => x.label).join('\n')), /0\.3\.3\.4/); assert.match(await page.locator('#pluginVersion').evaluate(el => [...el.querySelectorAll('optgroup')].map(x => x.label).join('\n')), /0\.4\.1r2/); assert.match(await page.locator('#pluginVersion').evaluate(el => [...el.querySelectorAll('optgroup')].map(x => x.label).join('\n')), /0\.4\.3r3/); await page.screenshot({ path: 'output/ui-cyberpunk-detail.png' });
+    const narrowDetail = await page.evaluate(() => { const dialog = document.querySelector('#gameDialog'); const box = dialog.getBoundingClientRect(); return { viewport: document.documentElement.clientWidth, left: box.left, right: box.right, scrollWidth: document.documentElement.scrollWidth }; });
+    assert.ok(narrowDetail.left >= -1 && narrowDetail.right <= narrowDetail.viewport + 1, 'game detail is clipped in narrow window'); assert.ok(narrowDetail.scrollWidth <= narrowDetail.viewport + 1, 'game detail creates horizontal overflow');
     await page.locator('#gameDialog [data-game-action="install"]').click(); await idle();
     if (process.platform === 'win32') { assert.equal(await page.locator('#confirmApply').isVisible(), true); await page.locator('#confirmApply').click(); await idle(); assert.deepEqual(await fs.readFile(path.join(exeDir, 'nr.addon64')), pe(1)); assert.deepEqual(await fs.readFile(path.join(exeDir, 'nrchain_nvngx.dll')), pe(9)); assert.deepEqual(await fs.readFile(path.join(exeDir, 'nvngx_dlssnr.dll')), pe(7)); assert.equal(await digestFile(path.join(exeDir, 'dxgi.dll')), PIN.dll.sha256); }
     await page.screenshot({ path: 'output/ui-install-complete.png' });
