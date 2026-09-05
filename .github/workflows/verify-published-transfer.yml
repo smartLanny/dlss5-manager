@@ -1,0 +1,33 @@
+name: Verify published binary transfer
+on:
+  push:
+    branches: ['feat/player-lifecycle-feedback']
+    paths: ['.github/workflows/verify-published-transfer.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Inspect transmitted published binary chunks only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,os,pathlib,urllib.request
+          out=pathlib.Path('transfer');out.mkdir()
+          ids=['5e2fbb3afa1f396c617303b18e6196ca28d47b43','346f5302f4e8c4bc6d4766a76430085a575d19f6']
+          rows=[]
+          for sha in ids:
+            req=urllib.request.Request('https://api.github.com/repos/smartLanny/dlss5-manager/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+            with urllib.request.urlopen(req,timeout=30) as r:v=json.load(r)
+            b=base64.b64decode(v['content']);assert hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()==sha
+            (out/(sha+'.bin')).write_bytes(b);rows.append({'sha':sha,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()})
+          print(json.dumps(rows));(out/'report.json').write_text(json.dumps(rows))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: published-transfer-verification
+          path: transfer/*
+          retention-days: 3
