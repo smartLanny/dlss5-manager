@@ -28,8 +28,9 @@ jobs:
           decoded=decoder.decompress(packed,max_length=2*1024*1024)
           assert len(decoded)<=2*1024*1024
           text=decoded.decode('utf-8',errors='replace')
-          assert text.startswith('diff --git ')
-          open('staged-manager-review.patch','w').write(text)
+          print(repr(text[:160]))
+          assert '\x00' not in text, 'Not a text-only source envelope'
+          open('staged-manager-review.txt','w').write(text)
           metadata={'complete':decoder.eof,'compressedBytes':len(packed),'decodedBytes':len(decoded),'sha256':hashlib.sha256(decoded).hexdigest(),'blobs':shas}
           open('staged-manager-review.json','w').write(json.dumps(metadata,indent=2))
           print(json.dumps(metadata))
@@ -38,7 +39,7 @@ jobs:
         with:
           name: staged-manager-review
           path: |
-            staged-manager-review.patch
+            staged-manager-review.txt
             staged-manager-review.json
           retention-days: 7
           if-no-files-found: error
