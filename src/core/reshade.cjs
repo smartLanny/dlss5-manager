@@ -7,13 +7,22 @@ const { download } = require('./network.cjs');
 const PIN = require('../../config/reshade.json');
 function unpackOfficial(bytes, pin = PIN) {
   if (bytes.length !== pin.size || sha256(bytes) !== pin.sha256) fail('RESHADE_CHECKSUM', '运行环境下载不完整或已变化。请重试，游戏文件尚未修改。');
-  // The official setup is an EXE with a ZIP suffix. It is parsed as data, NEVER launched.
-  let end = -1;
-  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) if (bytes.readUInt32LE(i) === 0x06054b50 && i + 22 + bytes.readUInt16LE(i + 20) === bytes.length) { end = i; break; }
+  // The fixed, whole-file hash above covers the setup, ZIP and any signing trailer.
+  // Some official setup files append signing data AFTER the ZIP end record.
+  // Trim that bounded trailer only here; generic user ZIP imports remain strict.
+  // This executable is read as data, NEVER launched.
+  let end = -1, zipEnd = -1, offset = -1;
+  const trailerLimit = 64 * 1024;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557 - trailerLimit); i--) {
+    if (bytes.readUInt32LE(i) !== 0x06054b50) continue;
+    const candidateEnd = i + 22 + bytes.readUInt16LE(i + 20);
+    const candidateOffset = i - bytes.readUInt32LE(i + 12) - bytes.readUInt32LE(i + 16);
+    if (candidateEnd > bytes.length || bytes.length - candidateEnd > trailerLimit || candidateOffset < 0 || candidateOffset > 1024 * 1024 || candidateOffset + 4 > i) continue;
+    if (bytes.readUInt32LE(candidateOffset) !== 0x04034b50) continue;
+    end = i; zipEnd = candidateEnd; offset = candidateOffset; break;
+  }
   if (end < 0) fail('RESHADE_ARCHIVE', '无法读取官方运行环境安装包。');
-  const offset = end - bytes.readUInt32LE(end + 12) - bytes.readUInt32LE(end + 16);
-  if (offset < 0 || offset > 1024 * 1024) fail('RESHADE_ARCHIVE', '官方安装包的格式已改变。');
-  const entries = readZip(bytes.subarray(offset), { maxPackage: 32 * 1024 * 1024, maxFile: 16 * 1024 * 1024 });
+  const entries = readZip(bytes.subarray(offset, zipEnd), { maxPackage: 32 * 1024 * 1024, maxFile: 16 * 1024 * 1024 });
   const dll = entries.get(pin.dll.name.toLowerCase())?.bytes;
   if (!dll || dll.length !== pin.dll.size || sha256(dll) !== pin.dll.sha256 || !peBytes(dll) || !dll.includes(Buffer.from('Searching for add-ons'))) fail('RESHADE_CAPABILITY', '运行环境不具备预期的插件加载能力。');
   return dll;
