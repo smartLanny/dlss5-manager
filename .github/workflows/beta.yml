@@ -42,7 +42,7 @@ jobs:
       - run: npm test
       - name: Official ReShade download, pin verification, extraction and offline cache
         run: npm run test:official
-      - name: Player UI auto detection, combined install, A/B/A and recovery
+      - name: Player UI auto detection, A/B, shared-host uninstall and paired feedback transport
         run: npm run test:ui
       - name: Build per-user setup and portable EXE
         run: npm run build:win
@@ -68,6 +68,7 @@ jobs:
             output/ui-versions.png
             output/ui-ab.png
             output/ui-feedback.png
+            output/ui-uninstall-shared.png
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
