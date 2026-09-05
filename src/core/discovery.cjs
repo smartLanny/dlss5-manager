@@ -43,6 +43,7 @@ async function walk(root, options = {}) {
       if (e.isSymbolicLink()) { problems.push('检测到未扫描的链接目录或文件'); continue; }
       if (e.isDirectory()) {
         if (e.name === '.git') continue;
+        if (options.discoveryOnly && /^(paks|movies|screenshots|textures|audio|reshade-shaders)$/i.test(e.name)) continue;
         if (depth >= maxDepth) { problems.push('部分目录超过扫描深度'); continue; }
         await visit(full, depth + 1);
       } else if (e.isFile()) files.push({ path: full, relative: rel, name: e.name });
@@ -52,7 +53,7 @@ async function walk(root, options = {}) {
   return { files, antiCheat, problems: [...new Set(problems)] };
 }
 async function candidates(root) {
-  const result = await walk(root, { maxEntries: 18000, maxDepth: 6 });
+  const result = await walk(root, { maxEntries: 18000, maxDepth: 12, discoveryOnly: true });
   const exes = result.files.filter(f => /\.exe$/i.test(f.name) && !AUXILIARY.test(f.name)).slice(0, 100);
   const list = [];
   for (const f of exes) {
@@ -87,7 +88,7 @@ async function discoverSteam(extraRoots = []) {
         const gameRoot = path.resolve(root, 'steamapps', 'common', a.installdir);
         if (!inside(path.join(root, 'steamapps', 'common'), gameRoot)) continue;
         await assertGameRoot(gameRoot);
-        games.push({ id: crypto.randomUUID(), name: String(a.name || a.installdir).slice(0, 160), scanRoot: gameRoot, exe: '', api: '', kind: ONLINE_IDS.has(a.appid) ? 'online' : 'unknown', steamId: a.appid, candidates: [], installed: null });
+        games.push({ id: crypto.randomUUID(), name: String(a.name || a.installdir).slice(0, 160), scanRoot: gameRoot, exe: '', api: '', kind: ONLINE_IDS.has(a.appid) ? 'online' : 'unknown', steamId: a.appid, source: 'steam', steamRoot: root, candidates: [], installed: null });
       } catch { notes.push('部分游戏清单已失效，未自动添加。'); }
     }
   }

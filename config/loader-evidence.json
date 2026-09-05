@@ -1,0 +1,10 @@
+[
+  {
+    "componentId": "reshade",
+    "version": "6.8.0",
+    "architecture": "x64",
+    "flavor": "full-addon",
+    "sha256": "0cee63f9c9f13f3ac909c5b4903f4dbb4b719a7ab3b4f13b0deaf83c814b94f7",
+    "source": "https://reshade.me/downloads/ReShade_Setup_6.8.0_Addon.exe"
+  }
+]

@@ -10,7 +10,7 @@
 
 本地包和所有前端输入均视为未信任。renderer 没有 Node.js 权限，启用 contextIsolation、sandbox、CSP、严格导航和 IPC 来源检查；不加载远程脚本。外部链接仅允许固定的官方入口。
 
-文件来源、内容完整性和游戏兼容性是三件不同的事。版本资源中的产品名只是线索，SHA-256 只确认内容，公钥签名才用于发布者认证。0.1 Beta 未配置正式发布者公钥，也未配置 Windows Authenticode 证书。
+文件来源、内容完整性和游戏兼容性是三件不同的事。版本资源中的产品名只是线索，SHA-256 只确认内容，公钥签名才用于发布者认证。0.2 Beta 未配置正式发布者公钥，也未配置 Windows Authenticode 证书。
 
 管理器不以管理员权限常驻，不要求用户关闭系统保护。无法写入受限游戏目录时显示权限错误，而不是自动提升权限。
 
@@ -31,3 +31,7 @@
 - Microsoft 文件签名信息：https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/get-authenticodesignature
 - NSIS 构建参数：https://www.electron.build/nsis/
 - Playwright Electron 自动化：https://playwright.dev/docs/api/class-electron
+
+## 0.2 玩家流程
+
+在线/反作弊线索是显式风险提示，不直接视为损坏文件；只在用户确认后部署 addon，不做任何检测规避。未知代理只读保留，不盲目覆盖。官方 6.8.0 full Add-on 的固定哈希是唯一新增 loader 允许项，仅在没有其他加载器的支持目录使用，写入与恢复均经过原事务引擎。文件占用、哈希漂移和损坏备份仍硬停止。来源与兼容性证据收进高级详情，但不删除检查。

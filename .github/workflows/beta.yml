@@ -1,19 +1,15 @@
 name: Windows Beta verification
-
 on:
   push:
-    branches: [main, 'release/**']
+    branches: [main]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: beta-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
 jobs:
   core:
     name: Core safety tests
@@ -31,9 +27,8 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm audit --audit-level=high
-
   windows:
-    name: Windows x64 install and recovery
+    name: Windows player flow and recovery
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -45,15 +40,16 @@ jobs:
       - run: npm ci --no-fund
       - run: npm run check
       - run: npm test
-      - name: Real Electron UI and synthetic game install / rollback
+      - name: Official ReShade download, pin verification, extraction and offline cache
+        run: npm run test:official
+      - name: Player UI auto detection, combined install, A/B/A and recovery
         run: npm run test:ui
       - name: Build per-user setup and portable EXE
         run: npm run build:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Check packaged application and generate release inventory
-        run: node scripts/release-files.cjs
-      - name: NSIS install path and packaged launch smoke
+      - run: node scripts/release-files.cjs
+      - name: NSIS install path, packaged launch and preserve recovery data
         shell: pwsh
         run: ./scripts/test-installer.ps1
       - uses: actions/upload-artifact@v4
@@ -68,17 +64,19 @@ jobs:
             dist/SHA256SUMS.txt
             dist/RELEASE-CONTENTS.json
             output/ui-home.png
+            output/ui-home-empty.png
             output/ui-versions.png
+            output/ui-ab.png
+            output/ui-feedback.png
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: ui-failure-diagnostics
           retention-days: 7
           path: output/*.png
-
   release:
-    name: Publish verified prerelease
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Publish explicitly requested Beta
+    if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && github.event_name == 'push' && contains(github.event.head_commit.message, '[release]'))
     needs: [core, windows]
     runs-on: ubuntu-latest
     permissions:
@@ -89,19 +87,13 @@ jobs:
         with:
           name: windows-beta
           path: release-artifacts
-      - name: Publish Beta (never stable/latest)
+      - name: Publish tested commit, no existing release replacement
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: >-
-          gh release create "$TAG"
-          release-artifacts/dist/*-Setup.exe
-          release-artifacts/dist/*-Portable.exe
-          release-artifacts/dist/SHA256SUMS.txt
-          release-artifacts/dist/RELEASE-CONTENTS.json
-          release-artifacts/output/ui-home.png
-          release-artifacts/output/ui-versions.png
-          --repo "$GITHUB_REPOSITORY"
-          --verify-tag --prerelease --latest=false
-          --title "装机宅 DLSS5 安装器 0.1 Beta"
-          --notes-file docs/RELEASE-0.1-BETA.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v$(node -p 'require("./package.json").version')"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "${GITHUB_REF#refs/tags/}" = "$TAG"; fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo 'Release already exists; it will not be overwritten.'; exit 0; fi
+          gh release create "$TAG" release-artifacts/dist/*-Setup.exe release-artifacts/dist/*-Portable.exe release-artifacts/dist/SHA256SUMS.txt release-artifacts/dist/RELEASE-CONTENTS.json release-artifacts/output/*.png --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false --title "装机宅 DLSS5 0.2 Beta · 游戏库与一键版本切换" --notes-file docs/RELEASE-0.2-BETA.md

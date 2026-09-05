@@ -128,4 +128,17 @@ async function steamRoots() {
   }
   return [...new Set(roots.map(x => path.resolve(x)))];
 }
-module.exports = { AC, PROXIES, APIS, peInfo, environment, metadata, checkLocks, steamRoots };
+async function runningGame(root) {
+  if (process.platform !== 'win32') fail('WINDOWS_REQUIRED', '识别运行中的游戏需要 Windows。');
+  const rows = await powershell(`
+    $rows=@(); foreach($p in @(Get-Process)) {
+      $pp=$null; try{$pp=$p.Path}catch{}
+      if($pp -and $pp.StartsWith($q.prefix,[StringComparison]::OrdinalIgnoreCase)) {
+        $mods=@(); try{$mods=@($p.Modules|ForEach-Object{$_.ModuleName.ToLowerInvariant()})}catch{}
+        $rows+=@{exe=$pp;modules=$mods}
+      }
+    }; ConvertTo-Json -InputObject @($rows) -Compress -Depth 4
+  `, { prefix: path.resolve(root) + path.sep });
+  return (Array.isArray(rows) ? rows : []).filter(x => x && typeof x.exe === 'string' && Array.isArray(x.modules));
+}
+module.exports = { AC, PROXIES, APIS, peInfo, environment, metadata, checkLocks, steamRoots, runningGame };

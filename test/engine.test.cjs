@@ -120,11 +120,11 @@ test('changing game settings invalidates an outstanding preview', async t => {
   const p = await engine.preview(game.id, pkg.id); game.api = 'DX11';
   await assert.rejects(engine.apply(p.id, consent), code('PLAN_CHANGED'));
 });
-test('actual compatibility and runtime confirmations are required', async t => {
+test('legacy environment checkbox is not a gate but actual installation consent remains required', async t => {
   const { engine, game, add } = await setup(t); const pkg = await add('0.3.3.4');
   game.environmentConfirmed = false;
-  const p = await engine.preview(game.id, pkg.id); assert.ok(p.blockers.some(x => x.includes('ReShade')));
-  await assert.rejects(engine.apply(p.id, consent), code('INSTALL_BLOCKED'));
+  const p = await engine.preview(game.id, pkg.id); assert.equal(p.blockers.length, 0);
+  await assert.rejects(engine.apply(p.id, {confirm:true}), code('CONFIRM_REQUIRED'));
   game.environmentConfirmed = true;
   await assert.rejects(engine.apply((await engine.preview(game.id, pkg.id)).id, { confirm: true }), code('CONFIRM_REQUIRED'));
 });
