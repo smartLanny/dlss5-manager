@@ -76,21 +76,25 @@ async function powershell(script, input = {}) {
   });
   return JSON.parse(stdout.replace(/^\uFEFF/, '').trim() || 'null');
 }
-async function environment(root, exe) {
+async function environment(root, exe, diagnostic) {
   if (process.platform !== 'win32') return { verified: false, running: [], antiCheat: [], reason: '仅 Windows 版本支持实际安装。' };
   try {
     const value = await powershell(`
-      $matches=@(); $ac=@();
-      foreach($p in Get-Process) {
+      $gameProcesses=@(); $ac=@();
+      foreach($p in @(Get-Process -ErrorAction Stop)) {
         if($p.ProcessName -match $q.ac){$ac+=$p.ProcessName}
         $pp=$null; try{$pp=$p.Path}catch{}
-        if($p.ProcessName -eq $q.stem -or ($pp -and $pp.StartsWith($q.prefix,[StringComparison]::OrdinalIgnoreCase))){$matches+=$p.ProcessName}
+        if($p.ProcessName -eq $q.stem -or ($pp -and $pp.StartsWith($q.prefix,[StringComparison]::OrdinalIgnoreCase))){$gameProcesses+=$p.ProcessName}
       }
-      foreach($s in Get-CimInstance Win32_Service){if(($s.Name+' '+$s.DisplayName) -match $q.ac -and $s.State -eq 'Running'){$ac+=$s.Name}}
-      @{verified=$true;running=@($matches|Select-Object -Unique);antiCheat=@($ac|Select-Object -Unique)}|ConvertTo-Json -Compress
+      foreach($s in @(Get-Service -ErrorAction Stop)){if(($s.Name+' '+$s.DisplayName) -match $q.ac -and $s.Status -eq 'Running'){$ac+=$s.Name}}
+      @{verified=$true;running=@($gameProcesses|Select-Object -Unique);antiCheat=@($ac|Select-Object -Unique)}|ConvertTo-Json -Compress
     `, { stem: path.basename(exe, path.extname(exe)), prefix: root + path.sep, ac: AC.source });
     return value;
-  } catch { return { verified: false, running: [], antiCheat: [], reason: '进程或服务检查失败，不能确认游戏已退出。' }; }
+  } catch (e) {
+    // Optional test-only observation of a failed native probe; never exposed to renderer IPC.
+    if (typeof diagnostic === 'function') diagnostic(e);
+    return { verified: false, running: [], antiCheat: [], reason: '进程或服务检查失败，不能确认游戏已退出。' };
+  }
 }
 async function metadata(files) {
   if (!files.length || process.platform !== 'win32') return {};

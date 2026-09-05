@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const { leaf, noLinks, sha256, assertGameRoot } = require('../src/core/safety.cjs');
 const { importPackage, readZip, writeZip, validateManifest, canonical } = require('../src/core/packages.cjs');
 const { parseVdf, walk } = require('../src/core/discovery.cjs');
-const { peInfo, AC, checkLocks } = require('../src/core/platform.cjs');
+const { peInfo, AC, checkLocks, environment } = require('../src/core/platform.cjs');
 const { scanGame } = require('../src/core/scanner.cjs');
 const { pe, temp, setup } = require('./helpers.cjs');
 const code = c => e => e.code === c;
@@ -107,6 +107,12 @@ test('known online Steam ID cannot be overridden to offline', async t => {
   const { game, engine } = await setup(t); game.steamId = '730'; game.kind = 'offline';
   const report = await scanGame(game, engine.root);
   assert.ok(report.blockers.some(b => b.includes('修改分类不能解除')));
+});
+test('native process and service enumeration returns structured Windows safety result', { skip: process.platform !== 'win32' }, async t => {
+  const root = await temp(t); let diagnostic = '';
+  const result = await environment(root, path.join(root, 'NotRunningSyntheticGame.exe'), e => { diagnostic = String(e.stderr || e.message).slice(0, 1800); });
+  assert.equal(result.verified, true, diagnostic || result.reason);
+  assert.ok(Array.isArray(result.running)); assert.ok(Array.isArray(result.antiCheat));
 });
 test('native file lock probe accepts a closed Windows file', { skip: process.platform !== 'win32' }, async t => {
   const root = await temp(t), file = path.join(root, 'a.addon64'); await fs.writeFile(file, pe()); await checkLocks([file]);
