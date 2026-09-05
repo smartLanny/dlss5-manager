@@ -24,11 +24,12 @@ async function run(label, action) {
 function game() { return state?.games.find(g => g.id === selectedGame); }
 function packageById(id) { return state?.packages.find(p => p.id === id); }
 function showPage(name) {
-  if (!['games', 'versions', 'recovery', 'about'].includes(name)) return;
+  if (!['games', 'versions', 'recovery', 'feedback', 'about'].includes(name)) return;
   activePage = name;
   for (const page of document.querySelectorAll('.page')) page.hidden = page.id !== `page-${name}`;
   for (const nav of document.querySelectorAll('.nav-item')) nav.classList.toggle('active', nav.dataset.page === name);
-  $('pageCrumb').textContent = { games: '游戏库', versions: '插件版本', recovery: '恢复中心', about: '使用帮助' }[name];
+  $('pageCrumb').textContent = { games: '游戏库', versions: '插件版本', recovery: '恢复中心', feedback: '反馈与诊断', about: '使用帮助' }[name];
+  if (name === 'feedback' && typeof renderFeedbackGames === 'function') renderFeedbackGames();
   $('main').scrollTop = 0;
 }
 async function refresh() {
@@ -44,6 +45,7 @@ async function refresh() {
   if (pending.length) notices.push(`<div class="notice danger global-notice"><strong>有 ${pending.length} 次操作需要恢复</strong><p>备份已保留，请先退出游戏，再到恢复中心处理。<button class="text-button" data-page="recovery">打开恢复中心 →</button></p></div>`);
   $('globalNotice').innerHTML = notices.join(''); $('globalNotice').hidden = !notices.length;
   renderGames(); renderInstall(); renderVersions(); renderHistory();
+  if (typeof renderFeedbackGames === 'function') renderFeedbackGames();
 }
 function renderGames() {
   const query = $('gameSearch').value.trim().toLowerCase();
@@ -71,7 +73,7 @@ function renderInstall() {
     <label class="check-row"><input id="environmentConfirmed" type="checkbox"${g.environmentConfirmed ? ' checked' : ''}><span>已按教程配置 <strong>Add-on 版 ReShade</strong> 和此版本所需的 NR runtime。</span></label>
     <p class="footnote">API 以实际运行模式和插件发布说明为准。检测到反作弊或未知代理冲突会阻止安装。</p>
     <div class="divider"></div><div class="button-row"><button class="button secondary small" data-action="scan"${!g.exe ? ' disabled' : ''}>只做安全检查</button>${g.installed ? '<button class="button subtle small danger-button" data-action="uninstall">卸载并恢复原文件</button>' : '<button class="text-button" data-link="tutorial">查看教程 ↗</button>'}</div>
-    <button class="button primary main-action" data-action="preview"${!g.exe || !selectedPackage ? ' disabled' : ''}>${g.installed ? '检查并预览更新' : '检查并预览安装'} <span aria-hidden="true">→</span></button><p class="action-note">先展示文件清单，确认后才会修改。</p>`;
+    <button class="button primary main-action" data-action="preview"${!g.exe || !selectedPackage ? ' disabled' : ''}>${g.installed ? '检查并预览更新' : '检查并预览安装'} <span aria-hidden="true">→</span></button><p class="action-note">先展示文件清单，确认后才会修改。</p><div class="inline-actions"><button class="text-button" data-action="report-problem">报告这个游戏的问题 →</button><button class="text-button" data-link="reshade">ReShade 官方获取入口 ↗</button></div>`;
 }
 function renderVersions() {
   $('versionCards').innerHTML = state.catalog.map(c => {
@@ -92,7 +94,7 @@ function renderHistory() {
 function renderReport(report) {
   lastReport = report;
   $('scanReport').hidden = false;
-  $('scanReport').innerHTML = `<div class="section-heading"><h2>安全检查报告</h2><span class="muted">${esc(date(report.scannedAt))}</span></div><div class="notice ${report.blockers.length ? 'danger' : 'success'}"><strong>${report.blockers.length ? '暂不能安装，请先处理这些问题' : '未发现阻断项，运行兼容性仍待验证'}</strong>${report.blockers.map(x => `<p>· ${esc(x)}</p>`).join('')}</div><p class="path">目标目录：${esc(report.targetRoot)}<br>扫描范围：${esc(report.scanRoot)}</p><div class="report-meta"><span class="tag neutral">EXE ${esc(report.exe.arch)}</span><span class="tag neutral">API 候选 ${esc(report.exe.apis.join(' / ') || '无法静态识别')}</span><span class="tag ${report.antiCheat.length ? 'danger' : 'neutral'}">目录反作弊线索 ${report.antiCheat.length}</span><span class="tag neutral">图形相关文件 ${report.files.length}</span></div>${report.warnings.map(x => `<p class="footnote">${esc(x)}</p>`).join('')}${report.files.length ? report.files.map(f => `<details class="file-report"><summary><strong>${esc(f.relative)}</strong><span class="muted">${esc(f.arch)}</span><span class="tag ${f.risk === 'high' ? 'danger' : f.risk === 'warning' ? 'warning' : ''}">${f.risk === 'high' ? '高风险' : f.risk === 'warning' ? '需确认' : '管理器文件'}</span></summary><dl class="file-properties"><dt>完整路径</dt><dd>${esc(f.path)}</dd><dt>文件来源</dt><dd>${esc(f.source)}</dd><dt>文件版本</dt><dd>${esc(f.version)}</dd><dt>数字签名</dt><dd>${esc(f.signature)} ${esc(f.signer)}</dd><dt>SHA-256</dt><dd>${esc(f.sha256)}</dd><dt>管理器归属</dt><dd>${f.owned ? '是，文件哈希与安装记录一致' : '否，不会自动清理'}</dd><dt>其他使用方</dt><dd>${esc(f.shared)}</dd><dt>静态依赖</dt><dd>${esc(f.imports.join(', ') || '未识别；不代表无运行时依赖')}</dd></dl></details>`).join('') : '<p class="muted">未发现列入检查范围的图形组件。这不代表已经安装了运行环境。</p>'}`;
+  $('scanReport').innerHTML = `<div class="section-heading"><h2>安全检查报告</h2><span class="muted">${esc(date(report.scannedAt))}</span></div><div class="notice ${report.blockers.length ? 'danger' : 'success'}"><strong>${report.blockers.length ? '暂不能安装，请先处理这些问题' : '未发现阻断项，运行兼容性仍待验证'}</strong>${report.blockers.map(x => `<p>· ${esc(x)}</p>`).join('')}</div><p class="path">目标目录：${esc(report.targetRoot)}<br>扫描范围：${esc(report.scanRoot)}</p><div class="report-meta"><span class="tag neutral">EXE ${esc(report.exe.arch)}</span><span class="tag neutral">API 候选 ${esc(report.exe.apis.join(' / ') || '无法静态识别')}</span><span class="tag ${report.antiCheat.length ? 'danger' : 'neutral'}">目录反作弊线索 ${report.antiCheat.length}</span><span class="tag neutral">图形相关文件 ${report.files.length}</span></div>${report.loader ? `<div class="notice neutral"><strong>ReShade 运行环境</strong><p>${esc(report.loader.message)}</p><button class="text-button" data-link="reshade">打开 ReShade 官网 ↗</button></div>` : ''}${report.warnings.map(x => `<p class="footnote">${esc(x)}</p>`).join('')}${report.files.length ? report.files.map(f => `<details class="file-report"><summary><strong>${esc(f.relative)}</strong><span class="muted">${esc(f.arch)}</span><span class="tag ${f.risk === 'high' ? 'danger' : f.risk === 'warning' ? 'warning' : ''}">${f.risk === 'high' ? '高风险' : f.risk === 'warning' ? '需确认' : '管理器文件'}</span></summary><dl class="file-properties"><dt>完整路径</dt><dd>${esc(f.path)}</dd><dt>文件来源</dt><dd>${esc(f.source)}</dd><dt>文件版本</dt><dd>${esc(f.version)}</dd><dt>数字签名</dt><dd>${esc(f.signature)} ${esc(f.signer)}</dd><dt>SHA-256</dt><dd>${esc(f.sha256)}</dd><dt>管理器归属</dt><dd>${f.owned ? '是，文件哈希与安装记录一致' : '否，不会自动清理'}</dd><dt>其他使用方</dt><dd>${esc(f.shared)}</dd><dt>静态依赖</dt><dd>${esc(f.imports.join(', ') || '未识别；不代表无运行时依赖')}</dd></dl></details>`).join('') : '<p class="muted">未发现列入检查范围的图形组件。这不代表已经安装了运行环境。</p>'}`;
 }
 function openImport(version = '') {
   $('importVersion').value = version || packageById(selectedPackage)?.manifest.version || '0.4.2beta';
@@ -109,9 +111,10 @@ async function preview(operation = 'install') {
   const g = game(); if (!g) return;
   const plan = await api('preview', { gameId: g.id, packageId: selectedPackage, operation });
   activePlan = plan; renderReport(plan.report);
+  const transitionLabels = { install: '首次安装', upgrade: '升级', downgrade: '降级', rebuild: '同版本文件变化', verify: '版本与文件一致，仅校验', switch: '切换版本', uninstall: '卸载' };
   $('planTitle').textContent = operation === 'uninstall' ? '确认卸载与原文件恢复' : '确认这次插件变更';
-  $('planContent').innerHTML = `<div class="plan-target"><small>${esc(g.name)} · ${esc(g.api)} · ${operation === 'uninstall' ? '卸载管理器拥有的文件' : esc(packageById(selectedPackage)?.manifest.version)}</small><div class="path">${esc(plan.targetRoot)}</div></div>${plan.blockers.length ? `<div class="notice danger"><strong>安全门禁未通过，不会修改文件</strong>${plan.blockers.map(b => `<p>· ${esc(b)}</p>`).join('')}</div>` : '<div class="notice neutral"><strong>全部原文件备份完成后，才开始替换</strong><p>预览有效期为 5 分钟。执行前会重新扫描并校验，失败时尝试自动恢复。</p></div>'}${plan.changes.map(c => `<div class="plan-file"><div class="plan-file-heading"><strong>${esc(c.name)}</strong><span class="tag ${c.adopt ? 'warning' : 'neutral'}">${esc(c.action)}</span></div><details><summary>查看替换前后 SHA-256</summary><p>原文件 ${esc(c.before || '不存在（将新增）')}</p><p>目标文件 ${esc(c.after || '恢复为不存在（移除）')}</p></details>${c.adopt ? `<label class="check-row"><input type="checkbox" class="adopt-check" data-name="${esc(c.name)}"><span>这是我之前安装的目标组件，允许管理器<strong>备份后接管并替换</strong>。不会接管其他文件。</span></label>` : ''}</div>`).join('')}<div class="plan-checks">${operation === 'install' ? '<label class="check-row"><input type="checkbox" id="confirmCompatibility"><span>我已查阅此版本发布说明，确认这是单机离线测试目标，理解当前游戏/API 兼容性仍待验证，异常时先恢复。</span></label>' : ''}<label class="check-row"><input type="checkbox" id="confirmPlan"><span>我已退出游戏、启动器及相关覆盖层，确认只修改以上清单中的文件。</span></label></div>`;
-  $('confirmApply').disabled = true; $('confirmApply').textContent = operation === 'uninstall' ? '卸载并恢复原文件' : g.installed ? '备份并更新' : '备份并安装';
+  $('planContent').innerHTML = `<div class="notice neutral"><strong>${esc(transitionLabels[plan.transition] || '变更预览')}</strong><p>${plan.noOp ? '此次不会复制、替换文件或重建原始备份。' : '所有写入仍使用原有事务与恢复流程。'}</p></div><div class="plan-target"><small>${esc(g.name)} · ${esc(g.api)} · ${operation === 'uninstall' ? '卸载管理器拥有的文件' : esc(packageById(selectedPackage)?.manifest.version)}</small><div class="path">${esc(plan.targetRoot)}</div></div>${plan.blockers.length ? `<div class="notice danger"><strong>安全门禁未通过，不会修改文件</strong>${plan.blockers.map(b => `<p>· ${esc(b)}</p>`).join('')}</div>` : plan.noOp ? '<div class="notice neutral"><strong>同版本且哈希一致，仅校验</strong><p>不复制文件、不新建事务、不改变首次原始备份。</p></div>' : '<div class="notice neutral"><strong>全部原文件备份完成后，才开始替换</strong><p>预览有效期为 5 分钟。执行前会重新扫描并校验，失败时尝试自动恢复。</p></div>'}${plan.changes.map(c => `<div class="plan-file"><div class="plan-file-heading"><strong>${esc(c.name)}</strong><span class="tag ${c.adopt ? 'warning' : 'neutral'}">${esc(c.action)}</span></div><details><summary>查看替换前后 SHA-256</summary><p>原文件 ${esc(c.before || '不存在（将新增）')}</p><p>目标文件 ${esc(c.after || '恢复为不存在（移除）')}</p></details>${c.adopt ? `<label class="check-row"><input type="checkbox" class="adopt-check" data-name="${esc(c.name)}"><span>这是我之前安装的目标组件，允许管理器<strong>备份后接管并替换</strong>。不会接管其他文件。</span></label>` : ''}</div>`).join('')}${(plan.retainedFiles || []).map(f => `<p class="footnote">保留：${esc(f.name)}（当前包没有提供，不会删除）</p>`).join('')}<div class="plan-checks">${plan.transition === 'downgrade' ? '<label class="check-row"><input type="checkbox" id="confirmDowngrade"><span>确认降级到旧版本；首次安装前的原始备份仍保留。</span></label>' : ''}${operation === 'install' ? '<label class="check-row"><input type="checkbox" id="confirmCompatibility"><span>我已查阅此版本发布说明，确认这是单机离线测试目标，理解当前游戏/API 兼容性仍待验证，异常时先恢复。</span></label>' : ''}<label class="check-row"><input type="checkbox" id="confirmPlan"><span>我已退出游戏、启动器及相关覆盖层，确认只修改以上清单中的文件。</span></label></div>`;
+  $('confirmApply').disabled = true; $('confirmApply').textContent = plan.noOp ? '确认并校验已有文件' : operation === 'uninstall' ? '卸载并恢复原文件' : g.installed ? '备份并更新' : '备份并安装';
   $('planDialog').showModal();
 }
 function updatePlanConsent() {
@@ -124,6 +127,7 @@ async function action(name) {
   if (name === 'import') { openImport(); return; }
   if (!game()) { toast('请先选择游戏。', true); return; }
   const id = game().id;
+  if (name === 'report-problem') { openGameFeedback(id); return; }
   if (name === 'open-folder') return run('正在打开游戏目录', () => api('open-game-folder', { gameId: id }));
   if (name === 'copy-path') return run('正在复制游戏路径', async () => { await api('copy-game-path', { gameId: id }); toast('已复制到剪贴板，仅在你的电脑上操作。'); });
   if (name === 'choose-exe') return run('正在选择游戏 EXE', async () => { await api('choose-exe', { gameId: id }); await refresh(); });
@@ -165,8 +169,8 @@ $('importForm').addEventListener('submit', event => {
 $('planContent').addEventListener('change', updatePlanConsent);
 $('confirmApply').addEventListener('click', () => run('正在重新检查、备份并处理游戏文件', async () => {
   if (!activePlan) return;
-  const consent = { confirm: !!$('confirmPlan')?.checked, compatibility: !!$('confirmCompatibility')?.checked, adoptNames: [...document.querySelectorAll('.adopt-check:checked')].map(c => c.dataset.name) };
-  try { const result = await api('apply', { planId: activePlan.id, consent }); $('planDialog').close(); toast(result.operation === 'uninstall' ? '已卸载，并恢复安装前的原文件。' : `已完成 ${result.version} 的文件安装。请在游戏内验证效果，异常时可在恢复中心撤销。`); }
+  const consent = { confirm: !!$('confirmPlan')?.checked, compatibility: !!$('confirmCompatibility')?.checked, downgrade: !!$('confirmDowngrade')?.checked, adoptNames: [...document.querySelectorAll('.adopt-check:checked')].map(c => c.dataset.name) };
+  try { const result = await api('apply', { planId: activePlan.id, consent }); $('planDialog').close(); toast(result.unchanged ? '版本与文件哈希一致。已完成校验，没有重复写入或重建备份。' : result.operation === 'uninstall' ? '已卸载，并恢复安装前的原文件。' : `已完成 ${result.version} 的文件安装。请在游戏内验证效果，异常时可在恢复中心撤销。`); }
   finally { activePlan = null; $('confirmApply').disabled = true; await refresh(); }
 }));
 $('exportLog').addEventListener('click', () => run('正在导出脱敏诊断', async () => { if (await api('export')) toast('诊断已导出，不包含用户名、游戏路径、账号或机器标识。'); }));

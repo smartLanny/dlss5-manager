@@ -1,0 +1,7 @@
+.feedback-grid{display:grid;grid-template-columns:minmax(290px,1fr) minmax(370px,1.15fr);gap:22px;align-items:start}
+.feedback-grid textarea{display:block;width:100%;margin-top:8px;padding:11px 12px;background:#121a21;border:1px solid #3a4854;border-radius:9px;color:var(--text);font-family:inherit;font-size:12px;line-height:1.8;resize:vertical;min-height:86px}
+.feedback-grid textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.feedback-grid .main-action{width:100%;margin-top:17px}.feedback-grid .notice{margin-top:18px;font-size:11px}
+.feedback-preview .release-notes{max-height:440px;min-height:200px;font-size:11px;line-height:1.9}
+.feedback-actions{flex-wrap:wrap}.feedback-grid h3{margin:0 0 8px;font-size:13px}.feedback-grid #feedbackAttachment{margin-top:12px;overflow-wrap:anywhere}
+@media(max-width:1120px){.feedback-grid{grid-template-columns:1fr}.feedback-preview .release-notes{max-height:380px}}

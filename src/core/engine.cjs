@@ -7,6 +7,8 @@ const { fail, validId, leaf, HASH, noLinks, assertGameRoot, digestFile, durableW
 const { scanGame } = require('./scanner.cjs');
 const { environment, checkLocks } = require('./platform.cjs');
 const { validateManifest } = require('./packages.cjs');
+const { componentForPackage, componentBlockers, changeKind } = require('./components.cjs');
+const MANAGER_VERSION = require('../../package.json').version;
 const clone = value => structuredClone(value);
 function allowedFile(name) {
   leaf(name);
@@ -31,14 +33,25 @@ class Engine {
     await noLinks(this.root);
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
     this.state = await readJson(this.stateFile, { schema: 1, games: [], packages: [] });
-    if (this.state.schema !== 1 || !Array.isArray(this.state.games) || !Array.isArray(this.state.packages) || this.state.games.length > 2000 || this.state.packages.length > 1000) fail('STATE_INVALID', '本地管理记录无法读取，未修改任何游戏文件。');
+    if (![1, 2].includes(this.state.schema) || !Array.isArray(this.state.games) || !Array.isArray(this.state.packages) || this.state.games.length > 2000 || this.state.packages.length > 1000) fail('STATE_INVALID', '本地管理记录无法读取，未修改任何游戏文件。');
     for (const g of this.state.games) { validId(g.id); if (typeof g.scanRoot !== 'string') fail('STATE_INVALID', '游戏记录已损坏。'); }
-    for (const p of this.state.packages) { validId(p.id); validateManifest(p.manifest); }
+    for (const p of this.state.packages) { validId(p.id); validateManifest(p.manifest); componentForPackage(p); }
     return this;
   }
-  async save() { await atomicJson(this.stateFile, this.state); }
+  async save() {
+    // Old managers cannot enforce v2 constraints. Fail closed on downgrade instead
+    // of presenting a normalized v2 package to 0.1 as an unrestricted v1 package.
+    if (this.state.schema === 1 && this.state.packages.some(p => p.componentManifest)) {
+      const previous = await readJson(this.stateFile, { schema: 1, games: [], packages: [] });
+      const folder = path.join(this.root, 'metadata-backups');
+      await noLinks(folder); await fs.mkdir(folder, { recursive: true, mode: 0o700 });
+      await durableWrite(path.join(folder, `state-v1-${crypto.randomUUID()}.json`), JSON.stringify(previous, null, 2), true);
+      this.state.schema = 2;
+    }
+    await atomicJson(this.stateFile, this.state);
+  }
   game(id) { validId(id); const g = this.state.games.find(g => g.id === id); if (!g) fail('GAME_MISSING', '游戏记录不存在，请重新添加。'); return g; }
-  package(id) { validId(id); const p = this.state.packages.find(p => p.id === id); if (!p) fail('PACKAGE_MISSING', '请先导入对应版本的 addon。'); validateManifest(p.manifest); return p; }
+  package(id) { validId(id); const p = this.state.packages.find(p => p.id === id); if (!p) fail('PACKAGE_MISSING', '请先导入对应版本的 addon。'); validateManifest(p.manifest); componentForPackage(p); return p; }
   txDir(id) { return path.join(this.root, 'transactions', validId(id)); }
   journalPath(id) { return path.join(this.txDir(id), 'journal.json'); }
   backupPath(ref) {
@@ -70,12 +83,24 @@ class Engine {
     this.busy = true;
     try { return await action(); } finally { this.busy = false; }
   }
+  async checkOwnership(game, root) {
+    const all = await this.history();
+    const other = this.state.games.find(g => g.id !== game.id && g.exe && path.resolve(path.dirname(g.exe)).toLowerCase() === root.toLowerCase() && (g.installed || all.some(j => j.gameId === g.id && !['committed', 'reverted', 'aborted'].includes(j.status))));
+    if (other) fail('TARGET_ALREADY_MANAGED', '同一运行目录已由另一条游戏记录管理，请使用原记录更新或恢复，避免污染原始备份。');
+    const latest = all.find(j => j.gameId === game.id && j.status === 'committed');
+    if (JSON.stringify(game.installed || null) !== JSON.stringify(latest?.afterInstalled || null)) fail('OWNERSHIP_UNVERIFIED', '文件归属记录与已提交事务不一致，已停止写入。请先到恢复中心检查。');
+    for (const f of game.installed?.files || []) {
+      allowedFile(f.name); validHash(f.sha256); validHash(f.baselineHash);
+      if (f.baselineHash && await digestFile(this.backupPath(f.baseline)) !== f.baselineHash) fail('BACKUP_DAMAGED', '首次接管前的原始备份校验失败，已停止更新并保留现状。');
+    }
+  }
   async preview(gameId, packageId, operation = 'install') {
     if (!['install', 'uninstall'].includes(operation)) fail('INVALID_OPERATION', '操作类型不支持。');
     const game = this.game(gameId), report = await this.deps.scan(game, this.root);
     const blockers = [...report.blockers];
     if ((await this.pending(gameId)).length) blockers.push('有未完成的操作，请先到恢复中心恢复。');
     const targetRoot = await assertGameRoot(path.dirname(game.exe), this.root);
+    await this.checkOwnership(game, targetRoot);
     const current = game.installed?.files || [];
     for (const f of current) {
       allowedFile(f.name); validHash(f.sha256);
@@ -84,6 +109,7 @@ class Engine {
     let pkg = null, desired = [], nextFiles = clone(current);
     if (operation === 'install') {
       pkg = this.package(packageId);
+      blockers.push(...componentBlockers(pkg, report, MANAGER_VERSION));
       if (!pkg.manifest.apis.includes(game.api)) blockers.push('导入包声明的 API 与当前游戏选择不一致。');
       if (!game.environmentConfirmed) blockers.push('请先确认支持 Add-on 的 ReShade 与所需 NR runtime 已按教程配置。');
       const existingAddon = current.find(x => x.role === 'addon');
@@ -106,10 +132,14 @@ class Engine {
       const before = await digestFile(path.join(targetRoot, d.name));
       const owned = current.find(x => x.name.toLowerCase() === d.name.toLowerCase());
       if (d.after) { validHash(d.after); if (await digestFile(d.source) !== d.after) fail('SOURCE_CHANGED', '源文件或原始备份校验失败。'); }
-      changes.push({ ...d, before, adopt: !!before && !owned, action: d.after === null ? '移除管理器文件' : before ? '备份并替换' : '新增文件' });
+      changes.push({ ...d, before, ownership: owned ? 'manager-owned' : before ? 'unknown' : 'new', adopt: !!before && !owned, action: d.after === null ? '移除管理器文件' : before === d.after && owned ? '内容一致，仅校验' : before ? '备份并替换' : '新增文件' });
     }
+    const noOp = operation === 'install' && game.installed?.version === pkg.manifest.version && changes.every(c => !c.adopt && c.before === c.after);
+    const transition = operation === 'install' ? changeKind(game.installed?.version, pkg.manifest.version, noOp) : 'uninstall';
+    const retainedFiles = current.filter(f => !changes.some(c => c.name.toLowerCase() === f.name.toLowerCase())).map(f => ({ name: f.name, role: f.role, sha256: f.sha256, action: '保留现有文件（本包未提供）' }));
+    const componentInfo = pkg ? { id: pkg.manifest.component, channel: componentForPackage(pkg)?.channel || 'local', contract: pkg.componentManifest ? 2 : 1 } : null;
     const id = crypto.randomUUID();
-    const plan = { id, gameId, packageId: pkg?.id || null, operation, targetRoot, createdAt: new Date().toISOString(), expires: Date.now() + 5 * 60 * 1000, changes, blockers: [...new Set(blockers)], report, previousInstalled: clone(game.installed || null), nextFiles, fingerprint: JSON.stringify({ exe: game.exe, api: game.api, kind: game.kind, environmentConfirmed: game.environmentConfirmed, installed: game.installed }) };
+    const plan = { id, noOp, transition, retainedFiles, componentInfo, gameId, packageId: pkg?.id || null, operation, targetRoot, createdAt: new Date().toISOString(), expires: Date.now() + 5 * 60 * 1000, changes, blockers: [...new Set(blockers)], report, previousInstalled: clone(game.installed || null), nextFiles, fingerprint: JSON.stringify({ exe: game.exe, api: game.api, kind: game.kind, environmentConfirmed: game.environmentConfirmed, installed: game.installed }) };
     for (const [key, value] of this.plans) if (value.expires < Date.now()) this.plans.delete(key);
     this.plans.set(id, plan);
     return { ...plan, changes: changes.map(({ source, ...c }) => c), nextFiles: undefined, fingerprint: undefined, previousInstalled: undefined };
@@ -121,10 +151,14 @@ class Engine {
       if (!plan || plan.expires < Date.now()) fail('PLAN_EXPIRED', '预览已过期，请重新检查后安装。');
       if (plan.blockers.length) fail('INSTALL_BLOCKED', plan.blockers.join('\n'));
       if (consent.confirm !== true || (plan.operation === 'install' && consent.compatibility !== true)) fail('CONFIRM_REQUIRED', '请确认变更清单和兼容性说明。');
+      if (plan.transition === 'downgrade' && consent.downgrade !== true) fail('DOWNGRADE_CONFIRMATION', '这是降级操作，请确认恢复到较旧的插件版本。');
       if (plan.changes.some(c => c.adopt && !consent.adoptNames?.includes(c.name))) fail('ADOPTION_REQUIRED', '需要逐项确认接管并备份现有文件。');
       const game = this.game(plan.gameId);
       if (plan.fingerprint !== JSON.stringify({ exe: game.exe, api: game.api, kind: game.kind, environmentConfirmed: game.environmentConfirmed, installed: game.installed })) fail('PLAN_CHANGED', '游戏配置已变化，请重新预览。');
       const report = await this.deps.scan(game, this.root);
+      if (plan.packageId) report.blockers.push(...componentBlockers(this.package(plan.packageId), report, MANAGER_VERSION));
+      await this.checkOwnership(game, plan.targetRoot);
+      for (const f of game.installed?.files || []) if (await digestFile(path.join(plan.targetRoot, f.name)) !== f.sha256) fail('FILE_CHANGED', '已有受管组件在预览后发生变化，已停止更新。');
       if (report.blockers.length || (await this.pending(game.id)).length) fail('INSTALL_BLOCKED', report.blockers.join('\n') || '请先恢复未完成操作。');
       await assertGameRoot(plan.targetRoot, this.root);
       await this.deps.locks(plan.changes.map(c => path.join(plan.targetRoot, c.name)));
@@ -132,6 +166,7 @@ class Engine {
         if (await digestFile(path.join(plan.targetRoot, c.name)) !== c.before) fail('FILE_CHANGED', '预览后文件发生变化，已停止。请重新检查。');
         if (c.after && await digestFile(c.source) !== c.after) fail('SOURCE_CHANGED', '源文件校验失败。');
       }
+      if (plan.noOp) return { transactionId: null, version: this.package(plan.packageId).manifest.version, operation: 'verify', unchanged: true };
       const txid = crypto.randomUUID(), dir = this.txDir(txid);
       await noLinks(dir); await fs.mkdir(dir, { recursive: true, mode: 0o700 });
       const journal = { schema: 1, id: txid, gameId: game.id, root: plan.targetRoot, operation: plan.operation, version: plan.packageId ? this.package(plan.packageId).manifest.version : null, createdAt: new Date().toISOString(), status: 'preparing', beforeInstalled: clone(game.installed || null), afterInstalled: null, changes: plan.changes.map(({ source, ...c }) => c) };
@@ -146,10 +181,10 @@ class Engine {
           const next = clone(plan.nextFiles);
           for (let i = 0; i < plan.changes.length; i++) {
             const c = plan.changes[i], index = next.findIndex(f => f.name.toLowerCase() === c.name.toLowerCase()), old = next[index];
-            const file = { name: c.name, role: c.role, sha256: c.after, baselineHash: old ? old.baselineHash : c.before, baseline: old ? old.baseline : c.before ? { tx: txid, index: i } : null };
+            const file = { name: c.name, role: c.role, componentId: c.role === 'nr-runtime' ? 'nr-runtime' : 'nr-before-sr', sha256: c.after, baselineHash: old ? old.baselineHash : c.before, baseline: old ? old.baseline : c.before ? { tx: txid, index: i } : null };
             if (index >= 0) next[index] = file; else next.push(file);
           }
-          journal.afterInstalled = { version: journal.version, packageId: plan.packageId, installedAt: new Date().toISOString(), files: next };
+          journal.afterInstalled = { componentId: 'nr-before-sr', channel: plan.componentInfo?.channel || 'local', version: journal.version, packageId: plan.packageId, installedAt: new Date().toISOString(), files: next };
         }
         journal.status = 'prepared'; await persist();
         for (let i = 0; i < plan.changes.length; i++) {

@@ -5,13 +5,14 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Engine } = require('./core/engine.cjs');
+const { registerFeedback } = require('./feedback-ipc.cjs');
 const { CATALOG, importPackage } = require('./core/packages.cjs');
 const { discoverSteam, candidates, manualScanRoot } = require('./core/discovery.cjs');
 const { scanGame } = require('./core/scanner.cjs');
 const { peInfo, APIS } = require('./core/platform.cjs');
 const { fail, validId, inside, assertGameRoot, friendlyError, durableWrite } = require('./core/safety.cjs');
 const VERSION = require('../package.json').version;
-const LINKS = Object.freeze({ bilibili: 'https://space.bilibili.com/941799', releases: 'https://github.com/smartLanny/dlss5-manager/releases', issues: 'https://github.com/smartLanny/dlss5-manager/issues', tutorial: 'https://space.bilibili.com/941799' });
+const LINKS = Object.freeze({ bilibili: 'https://space.bilibili.com/941799', releases: 'https://github.com/smartLanny/dlss5-manager/releases', issues: 'https://github.com/smartLanny/dlss5-manager/issues', tutorial: 'https://space.bilibili.com/941799', reshade: 'https://reshade.me/' });
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.enableSandbox();
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -27,7 +28,11 @@ function handle(name, fn, mutates = false) {
     if (mutates && operationBusy) return { ok: false, error: { code: 'BUSY', message: '已有操作正在进行。' } };
     if (mutates) operationBusy = true;
     try { return { ok: true, value: await fn(payload || {}) }; }
-    catch (e) { return { ok: false, error: friendlyError(e) }; }
+    catch (e) {
+      const error = friendlyError(e);
+      if (['apply', 'preview', 'recover', 'scan', 'import'].includes(name)) engine.lastEventCode = error.code;
+      return { ok: false, error };
+    }
     finally { if (mutates) operationBusy = false; }
   });
 }
@@ -39,6 +44,7 @@ async function chooseExe(game) {
   return { exe, pe };
 }
 function registerHandlers() {
+  registerFeedback({ handle, engine, win, dialog, shell, clipboard });
   handle('state', publicState);
   handle('add-game', async () => {
     const chosen = await chooseExe(); if (!chosen) return null;
@@ -92,6 +98,10 @@ function registerHandlers() {
     if (pick.canceled) return null;
     const keys = require('../config/trusted-keys.json');
     const pkg = await importPackage(pick.filePaths[0], { version, api, expectedHash: expectedHash.trim(), acceptLocal }, path.join(engine.root, 'packages'), keys);
+    if (pkg.componentManifest && engine.state.schema === 1) {
+      const answer = await dialog.showMessageBox(win, { type: 'warning', title: '确认升级组件库格式', message: '导入组件 v2 包后，需要使用 0.2 或更新的管理器。', detail: '会先备份旧版元数据，再升级本地组件库。0.1 将不能继续读取这个组件库，以免忽略新包的依赖和版本限制。游戏目录不会因导入而改变。正在测试 0.1 时建议取消，继续使用原始 addon 或 v1 包。', buttons: ['取消导入', '备份并升级组件库'], defaultId: 0, cancelId: 0, noLink: true });
+      if (answer.response !== 1) return null;
+    }
     engine.state.packages.push(pkg); await engine.save(); return pkg;
   }, true);
   handle('preview', async ({ gameId, packageId, operation }) => engine.preview(gameId, packageId, operation), true);
@@ -144,7 +154,7 @@ app.whenReady().then(async () => {
   protocol.handle('app', request => {
     const u = new URL(request.url);
     const name = decodeURIComponent(u.pathname).replace(/^\//, '');
-    if (u.hostname !== 'ui' || !['index.html', 'app.css', 'app.js'].includes(name)) return new Response('Not found', { status: 404 });
+    if (u.hostname !== 'ui' || !['index.html', 'app.css', 'app.js', 'feedback.js', 'feedback.css'].includes(name)) return new Response('Not found', { status: 404 });
     return net.fetch(pathToFileURL(path.join(__dirname, 'ui', name)).toString());
   });
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));

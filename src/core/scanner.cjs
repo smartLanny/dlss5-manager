@@ -3,6 +3,7 @@
 const path = require('node:path');
 const { fail, assertGameRoot, noLinks, digestFile, inside } = require('./safety.cjs');
 const { PROXIES, peInfo, metadata, environment } = require('./platform.cjs');
+const { loaderStatus } = require('./loader.cjs');
 const { walk, ONLINE_IDS, AUXILIARY } = require('./discovery.cjs');
 async function scanGame(game, storeRoot) {
   const root = await assertGameRoot(game.scanRoot, storeRoot);
@@ -25,7 +26,8 @@ async function scanGame(game, storeRoot) {
       const product = `${m.description || ''} ${m.product || ''}`;
       const source = owned ? '管理器安装' : /reshade/i.test(product) ? 'ReShade（按版本资源识别）' : /dxvk/i.test(product) ? 'DXVK' : /enb/i.test(product) ? 'ENB' : /^sl\./i.test(f.name) ? 'Streamline（按文件名识别）' : '来源待确认';
       const proxy = PROXIES.has(f.name.toLowerCase());
-      files.push({ ...f, arch: pe?.arch || '不适用', imports: pe?.imports || [], sha256: hash, version: m.version || '未提供', signature: m.signature || '未能验证', signer: m.signer || '', description: m.description || '', source, owned, shared: owned ? '运行时使用仍需检查' : '可能由游戏或其他工具使用', risk: proxy && !/reshade/i.test(source) ? 'high' : owned ? 'low' : 'warning', proxy });
+      const componentId = /^sl\./i.test(f.name) ? 'streamline' : /reshade/i.test(source) ? 'reshade' : source === 'DXVK' ? 'dxvk' : source === 'ENB' ? 'enb' : f.name.toLowerCase() === 'nvngx_dlssnr.dll' ? 'nr-runtime' : owned && /\.addon64$/i.test(f.name) ? 'nr-before-sr' : null;
+      files.push({ ...f, componentId, ownership: owned ? 'manager-owned' : source === '来源待确认' ? 'unknown' : 'known-third-party', arch: pe?.arch || '不适用', imports: pe?.imports || [], sha256: hash, version: m.version || '未提供', signature: m.signature || '未能验证', signer: m.signer || '', description: m.description || '', source, owned, shared: owned ? '运行时使用仍需检查' : '可能由游戏或其他工具使用', risk: proxy && !/reshade/i.test(source) ? 'high' : owned ? 'low' : 'warning', proxy });
     } catch { result.problems.push('部分组件读取或哈希失败'); }
   }
   const env = await environment(targetRoot, game.exe), blockers = [];
@@ -46,6 +48,7 @@ async function scanGame(game, storeRoot) {
   const loaderFound = localProxies.some(f => f.source.startsWith('ReShade'));
   const warnings = ['静态扫描不能证明运行时兼容，也不能保证账号安全。', 'Beta 不会安装或替换 ReShade、显卡驱动或图形代理 DLL。'];
   if (!loaderFound) warnings.push('未识别到同目录 ReShade。必须先按教程配置支持 Add-on 的加载环境。');
-  return { scannedAt: new Date().toISOString(), targetRoot, scanRoot: root, exe, files, antiCheat: result.antiCheat, environment: env, blockers: [...new Set(blockers)], warnings, loaderFound, compatibility: '待验证' };
+  const loader = loaderStatus(files, targetRoot, require('../../config/loader-evidence.json'));
+  return { loader, componentEvidence: loader.componentEvidence, scannedAt: new Date().toISOString(), targetRoot, scanRoot: root, exe, files, antiCheat: result.antiCheat, environment: env, blockers: [...new Set(blockers)], warnings, loaderFound, compatibility: '待验证' };
 }
 module.exports = { scanGame };
