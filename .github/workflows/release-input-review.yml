@@ -1,0 +1,48 @@
+name: Release input verification
+on:
+  push:
+    branches: ['feat/player-lifecycle-feedback']
+    paths: ['.github/workflows/release-input-review.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Inspect published archives only, never execute or fetch NR source
+        run: |
+          python3 - <<'PY'
+          import urllib.request,json,hashlib,zipfile,io,pathlib,concurrent.futures
+          out=pathlib.Path('review');out.mkdir()
+          inputs=[
+          ('r3-cn','https://github.com/smartLanny/dlss5-nr-before-sr-lab/releases/download/beta0.4.3r3/DLSS5-beta0.4.3r3-Chinese-OTA.zip','54ab7b21cc12a535dda95e6b9f3cb1a39d723c59b4d991515ece3e4d9d0f0573'),
+          ('r3-en','https://github.com/smartLanny/dlss5-nr-before-sr-lab/releases/download/beta0.4.3r3/DLSS5-beta0.4.3r3-English-OTA.zip','47d4a9363294cb7642653596750b4f9b6ce673e16b5da41d87a924bc2c0813ac'),
+          ('nr50','https://github.com/RankFTW/rhi-repo/releases/download/dlssnr-310.8.0/nvngx_dlssnr_310.8.0.zip','388c0a7912e15ec911b9c9e11a692142b11fe387ddf2b637d8c358138fffb3ac'),
+          ('nr40','https://github.com/RankFTW/rhi-repo/releases/download/dlssnr-310.8.0-RTX40/nvngx_dlssnr_310.8.0-RTX40.zip','46124cfaef532ad5f6da07494772ea8c1b3e719f934e254385697f38d1289e3f'),
+          ('nr30','https://github.com/RankFTW/rhi-repo/releases/download/dlssnr-310.8.SF-v2/nvngx_dlssnr_310.8.SF-v2.zip','1da35941894994eb087e017577829e492454e9bae3a6a9397027069ceb74955c')]
+          def inspect(item):
+            key,url,expected=item
+            with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'DLSS5-Manager-public-release-review'}),timeout=120) as r:b=r.read(200*1024*1024+1)
+            assert len(b)<=200*1024*1024 and hashlib.sha256(b).hexdigest()==expected
+            z=zipfile.ZipFile(io.BytesIO(b));rows=[]
+            for f in z.infolist():
+              assert f.file_size<512*1024*1024
+              if f.is_dir():continue
+              data=z.read(f)
+              row={'name':f.filename,'size':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+              if pathlib.PurePosixPath(f.filename).suffix.lower() in ('.json','.txt','.md') and len(data)<150000:row['text']=data.decode('utf-8-sig',errors='replace')
+              rows.append(row)
+            if key.startswith('r3-'):(out/(key+'.zip')).write_bytes(b)
+            # Runtime bytes are NOT re-uploaded or redistributed. Only source metadata.
+            return {'id':key,'url':url,'size':len(b),'sha256':expected,'files':rows}
+          with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:result=list(pool.map(inspect,inputs))
+          (out/'inputs.json').write_text(json.dumps(result,ensure_ascii=False,indent=2))
+          print(json.dumps([{'id':v['id'],'files':[{k:r[k] for k in ('name','size','sha256')} for r in v['files']]} for v in result],indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-r3-release-review
+          path: review/*
+          retention-days: 3
+          if-no-files-found: error
