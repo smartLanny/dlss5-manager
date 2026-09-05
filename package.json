@@ -1,0 +1,46 @@
+{
+  "name": "zhuangjizhai-dlss5-manager",
+  "version": "0.1.0-beta.1",
+  "description": "装机宅 DLSS5 安装器：独立、安全、可回滚的 NR before SR 插件管理器",
+  "author": "装机宅",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/main.cjs",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "test:ui": "node scripts/smoke.cjs",
+    "check": "node scripts/check.cjs",
+    "build:win": "node scripts/icon.cjs && electron-builder --win nsis portable --x64 --publish never",
+    "pack:addon": "node scripts/pack-addon.cjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "electron": "44.2.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "cn.zhuangjizhai.dlss5manager",
+    "productName": "装机宅 DLSS5 安装器",
+    "copyright": "Copyright © 2026 装机宅",
+    "asar": true,
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["src/**/*", "config/**/*", "LICENSE", "NOTICE.md", "package.json"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "executableName": "Zhuangjizhai-DLSS5-Manager"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Zhuangjizhai-DLSS5-Manager-${version}-Setup.${ext}",
+      "shortcutName": "装机宅 DLSS5 安装器"
+    },
+    "portable": { "artifactName": "Zhuangjizhai-DLSS5-Manager-${version}-Portable.${ext}" },
+    "publish": null
+  }
+}
