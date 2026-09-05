@@ -5,12 +5,16 @@ const { fail, assertGameRoot, noLinks, digestFile, inside } = require('./safety.
 const { PROXIES, peInfo, metadata, environment } = require('./platform.cjs');
 const { loaderStatus } = require('./loader.cjs');
 const { walk, ONLINE_IDS, AUXILIARY } = require('./discovery.cjs');
-async function scanGame(game, storeRoot) {
+async function scanGame(game, storeRoot, options = {}) {
+  const restoring = options.purpose === 'uninstall';
   const root = await assertGameRoot(game.scanRoot, storeRoot);
   if (!game.exe || !inside(root, game.exe)) fail('EXE_REQUIRED', '请先选择游戏真正运行的 EXE。');
   const targetRoot = await assertGameRoot(path.dirname(game.exe), storeRoot);
   await noLinks(game.exe);
-  const exe = await peInfo(game.exe);
+  const exe = await peInfo(game.exe).catch(e => {
+    if (e.code === 'ENOENT') return { valid: false, arch: '未知', dll: false, imports: [], apis: [] };
+    throw e;
+  });
   const result = await walk(root);
   const interesting = result.files.filter(f => PROXIES.has(f.name.toLowerCase()) || /\.asi$|\.addon(?:32|64)$|^nvngx_.*\.dll$|^sl\..*\.dll$|^reshade|^enb|^dxvk/i.test(f.name));
   if (interesting.length > 150) result.problems.push('图形组件过多，需要确认真实游戏目录');
@@ -33,9 +37,9 @@ async function scanGame(game, storeRoot) {
   }
   const env = await environment(targetRoot, game.exe), blockers = [], riskWarnings = [];
   const warn = (code, message) => riskWarnings.push({ code, message });
-  if (!exe.valid || exe.dll || exe.arch !== 'x64') blockers.push('这个运行程序不受支持，请选择 Windows x64 游戏。');
-  if (AUXILIARY.test(path.basename(game.exe))) blockers.push('这是启动器或辅助程序，请识别真正运行的游戏。');
-  if (!game.api) blockers.push('还未确定游戏运行方式，请启动一次游戏后重新识别。');
+  if (!restoring && (!exe.valid || exe.dll || exe.arch !== 'x64')) blockers.push('这个运行程序不受支持，请选择 Windows x64 游戏。');
+  if (!restoring && AUXILIARY.test(path.basename(game.exe))) blockers.push('这是启动器或辅助程序，请识别真正运行的游戏。');
+  if (!restoring && !game.api) blockers.push('还未确定游戏运行方式，请启动一次游戏后重新识别。');
   if (game.kind === 'online' || ONLINE_IDS.has(game.steamId)) warn('ONLINE_GAME', '这是在线或竞技游戏，安装模组可能影响启动或账号；仅在游戏允许的环境中测试。');
   if (result.antiCheat.length) warn('ANTI_CHEAT_FILES', '游戏目录存在反作弊组件；本工具不绕过检测，继续安装可能导致拒绝启动或账号风险。');
   if (env.antiCheat.length) warn('ANTI_CHEAT_SERVICE', '检测到正在运行的反作弊服务。切换插件不会绕过它，可能仍被游戏拒绝加载。');

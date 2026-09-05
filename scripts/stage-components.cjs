@@ -18,7 +18,7 @@ async function main() {
       if (pkg.componentManifest?.license.redistribution === 'not-allowed') throw new Error('组件清单禁止再分发。');
       result.push({ file:name,sha256:await digestFile(file),version:pkg.manifest.version,source:file });
     }
-    for (const expected of ['0.3.3.4','0.4.2beta']) if (!result.some(p=>p.version.toLowerCase()===expected)) throw new Error(`完整发行包需要 ${expected}，不能用空入口冒充已内置。`);
+    for (const expected of Object.values(require('../src/core/versions.cjs').DEFAULTS)) if (!result.some(p=>require('../src/core/versions.cjs').versionKey(p.version)===expected)) throw new Error(`完整发行包需要 ${expected}，不能用空入口冒充已内置。`);
     const dest=path.resolve('resources/components');await noLinks(dest);await fs.mkdir(dest,{recursive:true});
     for(const p of result) await fs.copyFile(p.source,path.join(dest,p.file));
     await atomicJson(path.join(dest,'catalog.json'),{schema:1,packages:result.map(({source,...p})=>p)});

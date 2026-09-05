@@ -24,7 +24,7 @@ let win, engine, player, operationBusy = false, bundleError = null, waitControll
 function progress(message) { if (win && !win.isDestroyed()) win.webContents.send('manager:progress', String(message).slice(0, 150)); }
 async function publicState() {
   const history = await engine.history();
-  return { version: VERSION, platform: process.platform, catalog: CATALOG, games: engine.state.games, packages: engine.state.packages, history: history.map(j => ({ id: j.id, gameId: j.gameId, version: j.version, createdAt: j.createdAt, restoredAt: j.restoredAt, status: j.status, operation: j.operation, fileCount: j.changes.length })), links: LINKS, bundleError, preferences: engine.state.preferences || {}, bundledCount: engine.state.packages.filter(p => p.distribution === 'bundled').length };
+  return { version: VERSION, platform: process.platform, catalog: CATALOG, games: engine.state.games.map(g => ({ ...g, preferredPackages: { A: player.preferred(g, 'A')?.id || null, B: player.preferred(g, 'B')?.id || null } })), packages: engine.state.packages, history: history.map(j => ({ id: j.id, gameId: j.gameId, version: j.version, createdAt: j.createdAt, restoredAt: j.restoredAt, status: j.status, operation: j.operation, fileCount: j.changes.length, keptEnvironmentCount: j.retainedEnvironment?.length || 0 })), links: LINKS, bundleError, preferences: engine.state.preferences || {}, bundledCount: engine.state.packages.filter(p => p.distribution === 'bundled').length };
 }
 function senderAllowed(event) { return win && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame && event.senderFrame.url === 'app://ui/index.html'; }
 function handle(name, fn, mutates = false) {
@@ -96,7 +96,8 @@ function registerHandlers() {
   handle('uninstall', async ({ gameId }) => {
     const p = await engine.preview(gameId, null, 'uninstall');
     if (p.blockers.length) fail('UNINSTALL_BLOCKED', p.blockers.join('\n'));
-    const answer = await dialog.showMessageBox(win, { type: 'question', message: '恢复这个游戏的原始文件？', detail: '仅撤销管理器安装的文件，保留游戏设置、存档和其他模组。\n' + p.riskWarnings.map(w=>w.message).join('\n'), buttons: ['取消', '恢复原版'], defaultId: 0, cancelId: 0, noLink: true });
+    const summary = require('./core/uninstall.cjs').uninstallSummary(p);
+    const answer = await dialog.showMessageBox(win, { type: 'question', message: '卸载本工具安装的 NR？', detail: summary.detail + '\n' + p.riskWarnings.map(w=>w.message).join('\n'), buttons: ['取消', '卸载我们的插件'], defaultId: 0, cancelId: 0, noLink: true });
     if (answer.response !== 1) return null;
     return player.apply(p.id, { confirm: true, compatibility: true, downgrade: true, adoptNames: [], riskCodes: p.riskWarnings.map(w => w.code) });
   }, true);
