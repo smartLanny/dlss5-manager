@@ -12,6 +12,8 @@ function preferredPackage(packages, game, slot) {
   const exact = packages.find(p => versionKey(p.manifest.version) === key);
   // Do not silently replace the requested beta with r2/r3/0.4.2 or a newer version.
   // Explicit A/B selections always permit later versions.
-  return exact || (!slot ? packages.at(-1) : undefined);
+  // A missing stable package is a real setup gap. Do not silently select a beta
+  // just because it happens to be the newest imported file.
+  return exact || undefined;
 }
 module.exports = { DEFAULTS, versionKey, preferredPackage };

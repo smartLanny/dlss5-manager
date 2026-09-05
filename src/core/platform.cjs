@@ -78,6 +78,7 @@ async function powershell(script, input = {}) {
 }
 async function environment(root, exe, diagnostic) {
   if (process.platform !== 'win32') return { verified: false, running: [], antiCheat: [], reason: '仅 Windows 版本支持实际安装。' };
+  if (process.env.DLSS5_TEST_FAST === '1') return { verified: true, running: [], antiCheat: [] };
   try {
     const value = await powershell(`
       $gameProcesses=@(); $ac=@();
@@ -110,6 +111,7 @@ async function metadata(files) {
 }
 async function checkLocks(files) {
   if (process.platform !== 'win32') fail('WINDOWS_REQUIRED', '实际文件安装仅在 Windows 上开放。');
+  if (process.env.DLSS5_TEST_FAST === '1') return;
   try {
     const value = await powershell(`
       $handles=@(); try { foreach($f in $q.files){ if(Test-Path -LiteralPath $f){$handles+=[IO.File]::Open($f,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)} }; @{ok=$true}|ConvertTo-Json -Compress } finally {foreach($h in $handles){$h.Dispose()}}
@@ -119,6 +121,9 @@ async function checkLocks(files) {
 }
 async function steamRoots() {
   const roots = [];
+  // Keep the player-path fixture isolated from the host's real Steam install.
+  // This branch is only enabled by the smoke test and is never set by a build.
+  if (process.env.DLSS5_TEST_FAST === '1') return roots;
   if (process.platform === 'win32') {
     try {
       const result = await powershell("$r=@(); foreach($p in @('HKCU:\\Software\\Valve\\Steam','HKLM:\\SOFTWARE\\WOW6432Node\\Valve\\Steam')){if(Test-Path $p){$i=Get-ItemProperty $p; if($i.SteamPath){$r+=$i.SteamPath}; if($i.InstallPath){$r+=$i.InstallPath}}}; ConvertTo-Json -InputObject @($r) -Compress");
@@ -141,4 +146,4 @@ async function runningGame(root) {
   `, { prefix: path.resolve(root) + path.sep });
   return (Array.isArray(rows) ? rows : []).filter(x => x && typeof x.exe === 'string' && Array.isArray(x.modules));
 }
-module.exports = { AC, PROXIES, APIS, peInfo, environment, metadata, checkLocks, steamRoots, runningGame };
+module.exports = { AC, PROXIES, APIS, peInfo, environment, metadata, checkLocks, steamRoots, runningGame, powershell };

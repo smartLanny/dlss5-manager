@@ -8,15 +8,18 @@ const { APIS } = require('./platform.cjs');
 const { validateComponent, installManifest } = require('./components.cjs');
 const MAX_FILE = 256 * 1024 * 1024, MAX_PACKAGE = 512 * 1024 * 1024;
 const CATALOG = [
-  { version: '0.3.3.4', title: '推荐版', description: '日常使用的稳定版本', channel: 'stable', badge: '推荐', compatibility: '待验证' },
-  { version: '0.4.1beta', title: '测试版', description: '可与稳定版一键对比', channel: 'beta', badge: '测试', compatibility: '待验证' }
+  { version: '0.3.3.4', title: '稳定版', description: '日常使用，默认优先选择。', channel: 'stable', badge: '推荐', compatibility: '待验证' },
+  { version: '0.4.1r2', title: '早期测试版', description: '保留用于对比画面效果。', channel: 'beta', badge: '测试', compatibility: '待验证' },
+  { version: '0.4.3r3', title: '最新 Beta', description: '最新装机宅 Beta；部分显卡运行环境仍属实验性。', channel: 'beta', badge: 'Beta', compatibility: '待验证' }
 ];
 function guessVersion(name) {
   const text = String(name);
-  const hit = text.match(/(?:^|[^0-9A-Za-z])v?(beta[- ]?)?((?:[0-9]+\.){1,3}[0-9]+)(-?beta(?:\.[0-9]+)?)?(-r[0-9]+)?/i);
+  const hit = text.match(/(?:^|[^0-9A-Za-z])v?(beta[- ]?)?((?:[0-9]+\.){1,3}[0-9]+)(?:([ -]?beta(?:\.[0-9]+)?)|([ -]?r[0-9]+))?/i);
   if (!hit || /^\.[0-9]/.test(text.slice(hit.index + hit[0].length))) return null;
-  const beta = hit[1] ? 'beta' : (hit[3] || '').replace(/^-/, '').toLowerCase();
-  return hit[2] + beta + (hit[4] || '').toLowerCase();
+  const beta = hit[1] ? 'beta' : (hit[3] || '').replace(/[ -]/g, '').toLowerCase();
+  const revision = (hit[4] || '').replace(/[ -]/g, '').toLowerCase();
+  const revisionSeparator = hit[1] && /-\s*r/i.test(hit[0]) ? '-' : '';
+  return hit[2] + beta + revisionSeparator + revision;
 }
 
 function archiveName(name) {
@@ -101,14 +104,16 @@ function validateManifest(manifest) {
   versionName(manifest.version);
   if (!Array.isArray(manifest.apis) || (!manifest.apis.length && manifest.apiPolicy !== 'detect-target') || manifest.apis.some(x => !APIS.includes(x))) fail('API_INVALID', '更新包没有声明支持的图形 API。');
   if (manifest.apiPolicy !== undefined && (manifest.apiPolicy !== 'detect-target' || manifest.apis.length !== 0)) fail('API_INVALID', 'API 声明不能与自动目标策略混用。');
-  if (!Array.isArray(manifest.files) || !manifest.files.length || manifest.files.length > 2) fail('MANIFEST_INVALID', 'Beta 仅支持一个 addon 和可选的 NR runtime。');
+  if (!Array.isArray(manifest.files) || !manifest.files.length || manifest.files.length > 4) fail('MANIFEST_INVALID', '更新包包含过多文件。');
   const names = new Set(); let addons = 0;
   for (const f of manifest.files) {
     if (!f || !HASH.test(f.sha256)) fail('HASH_INVALID', '更新包缺少有效的 SHA-256 清单。');
     const n = leaf(f.path).toLowerCase();
     if (names.has(n)) fail('MANIFEST_INVALID', '文件清单存在重名。'); names.add(n);
     if (f.role === 'addon' && n.endsWith('.addon64')) addons++;
-    else if (!(f.role === 'nr-runtime' && n === 'nvngx_dlssnr.dll')) fail('PROTECTED_FILE', '更新包尝试修改不允许的 DLL。Beta 不替换图形代理、系统 DLL 或游戏引擎文件。');
+    else if (f.role === 'nr-runtime' && n === 'nvngx_dlssnr.dll') { /* approved runtime slot */ }
+    else if (f.role === 'bridge' && n === 'nrchain_nvngx.dll') { /* approved bridge slot */ }
+    else fail('PROTECTED_FILE', '更新包尝试修改不允许的 DLL。管理器不替换图形代理、系统 DLL 或游戏引擎文件。');
   }
   if (addons !== 1) fail('MANIFEST_INVALID', '更新包必须且只能包含一个 x64 addon。');
   return manifest;
@@ -135,10 +140,12 @@ async function importPackage(file, options, cacheRoot, trustedKeys = {}) {
       if (addons.length !== 1) fail('MANIFEST_INVALID', '这个包包含多个版本或没有插件，请选择其中一个 addon 文件。');
       const runtime = [...payloads.values()].filter(p => path.posix.basename(p.name).toLowerCase() === 'nvngx_dlssnr.dll');
       if (runtime.length > 1) fail('MANIFEST_INVALID', '压缩包包含多个同名运行组件，不能确定目标。');
-      const entries = [addons[0], ...runtime].map(p => ({ name: leaf(path.posix.basename(p.name)), bytes: p.bytes }));
-      if ([...payloads.values()].some(p => /\.(exe|bat|cmd|ps1|vbs|msi|js|asi|addon32)$/i.test(p.name) || (/\.dll$/i.test(p.name) && path.posix.basename(p.name).toLowerCase() !== 'nvngx_dlssnr.dll'))) fail('EXTRA_PAYLOAD', '这个包带有额外安装程序，请仅选择插件或标准更新包。');
+      const bridges = [...payloads.values()].filter(p => path.posix.basename(p.name).toLowerCase() === 'nrchain_nvngx.dll');
+      if (bridges.length > 1) fail('MANIFEST_INVALID', '压缩包包含多个同名桥接组件，不能确定目标。');
+      const entries = [addons[0], ...bridges, ...runtime].map(p => ({ name: leaf(path.posix.basename(p.name)), bytes: p.bytes }));
+      if ([...payloads.values()].some(p => /\.(exe|bat|cmd|ps1|vbs|msi|js|asi|addon32)$/i.test(p.name) || (/\.dll$/i.test(p.name) && !['nvngx_dlssnr.dll', 'nrchain_nvngx.dll'].includes(path.posix.basename(p.name).toLowerCase())))) fail('EXTRA_PAYLOAD', '这个包带有额外安装程序，请仅选择插件或标准更新包。');
       payloads = new Map(entries.map(p => [p.name.toLowerCase(), p]));
-      envelope = { manifest: { schema: 1, component: 'nr-before-sr', version: options.version || guessVersion(path.basename(file)) || guessVersion(addons[0].name) || ('0.0.0-local.' + Date.now()), architecture: 'x64', apis: options.api ? [options.api] : [], ...(options.api ? {} : { apiPolicy: 'detect-target' }), files: entries.map(p => ({ path: p.name, role: /\.addon64$/i.test(p.name) ? 'addon' : 'nr-runtime', sha256: sha256(p.bytes) })) } };
+      envelope = { manifest: { schema: 1, component: 'nr-before-sr', version: options.version || guessVersion(path.basename(file)) || guessVersion(addons[0].name) || ('0.0.0-local.' + Date.now()), architecture: 'x64', apis: options.api ? [options.api] : [], ...(options.api ? {} : { apiPolicy: 'detect-target' }), files: entries.map(p => ({ path: p.name, role: /\.addon64$/i.test(p.name) ? 'addon' : path.basename(p.name).toLowerCase() === 'nrchain_nvngx.dll' ? 'bridge' : 'nr-runtime', sha256: sha256(p.bytes) })) } };
     }
     try { if (record) envelope = JSON.parse(record.bytes.toString('utf8')); } catch { fail('MANIFEST_INVALID', '更新清单格式有误。'); }
     if (envelope.manifest?.schemaVersion !== undefined) {

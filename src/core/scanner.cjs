@@ -16,7 +16,7 @@ async function scanGame(game, storeRoot, options = {}) {
     throw e;
   });
   const result = await walk(root);
-  const interesting = result.files.filter(f => PROXIES.has(f.name.toLowerCase()) || /\.asi$|\.addon(?:32|64)$|^nvngx_.*\.dll$|^sl\..*\.dll$|^reshade|^enb|^dxvk/i.test(f.name));
+  const interesting = result.files.filter(f => PROXIES.has(f.name.toLowerCase()) || /\.asi$|\.addon(?:32|64)$|^nvngx_.*\.dll$|^nrchain_nvngx\.dll$|^sl\..*\.dll$|^reshade|^enb|^dxvk/i.test(f.name));
   if (interesting.length > 150) result.problems.push('图形组件过多，需要确认真实游戏目录');
   const selected = interesting.slice(0, 150), meta = {};
   for (let i = 0; i < selected.length; i += 25) Object.assign(meta, await metadata(selected.slice(i, i + 25).map(x => x.path)));
@@ -31,7 +31,7 @@ async function scanGame(game, storeRoot, options = {}) {
       const source = owned ? (receipt.role === 'reshade-loader' ? '管理器安装（ReShade）' : '管理器安装') : /reshade/i.test(product) ? 'ReShade（按版本资源识别）' : /dxvk/i.test(product) ? 'DXVK' : /enb/i.test(product) ? 'ENB' : /^sl\./i.test(f.name) ? 'Streamline（按文件名识别）' : '来源待确认';
       const proxy = PROXIES.has(f.name.toLowerCase());
       const approvedLoader = require('../../config/loader-evidence.json').some(k => k.sha256 === hash && k.architecture === pe?.arch);
-      const componentId = approvedLoader || receipt?.role === 'reshade-loader' ? 'reshade' : /^sl\./i.test(f.name) ? 'streamline' : /reshade/i.test(source) ? 'reshade' : source === 'DXVK' ? 'dxvk' : source === 'ENB' ? 'enb' : f.name.toLowerCase() === 'nvngx_dlssnr.dll' ? 'nr-runtime' : owned && /\.addon64$/i.test(f.name) ? 'nr-before-sr' : null;
+      const componentId = approvedLoader || receipt?.role === 'reshade-loader' ? 'reshade' : /^sl\./i.test(f.name) ? 'streamline' : /reshade/i.test(source) ? 'reshade' : source === 'DXVK' ? 'dxvk' : source === 'ENB' ? 'enb' : f.name.toLowerCase() === 'nvngx_dlssnr.dll' ? 'nr-runtime' : f.name.toLowerCase() === 'nrchain_nvngx.dll' ? 'bridge' : owned && /\.addon64$/i.test(f.name) ? 'nr-before-sr' : null;
       files.push({ ...f, componentId, ownership: owned ? 'manager-owned' : source === '来源待确认' ? 'unknown' : 'known-third-party', arch: pe?.arch || '不适用', imports: pe?.imports || [], sha256: hash, version: m.version || '未提供', signature: m.signature || '未能验证', signer: m.signer || '', description: m.description || '', source, owned, shared: owned ? '运行时使用仍需检查' : '可能由游戏或其他工具使用', risk: proxy && !/reshade/i.test(source) ? 'high' : owned ? 'low' : 'warning', proxy, loaderCandidate: proxy || /\.asi$/i.test(f.name) });
     } catch { result.problems.push('部分组件读取或哈希失败'); }
   }

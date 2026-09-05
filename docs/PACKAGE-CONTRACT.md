@@ -6,7 +6,7 @@
 
 ## 标准包
 
-`.dlss5pkg` 是仅含扁平文件的 ZIP。内容为 `manifest.json`、一个 `.addon64` 和可选的 `nvngx_dlssnr.dll`。不支持子目录、链接、额外文件、加密包或分卷包。单文件上限 256 MiB，总上限 512 MiB。
+`.dlss5pkg` 是仅含扁平文件的 ZIP。内容为 `manifest.json`、一个 `.addon64`，以及按发布清单声明的 `nrchain_nvngx.dll` / `nvngx_dlssnr.dll`。不支持子目录、链接、额外文件、加密包或分卷包。单文件上限 256 MiB，总上限 512 MiB。
 
 清单外层字段是 `manifest`。内部必填字段如下。
 
@@ -19,10 +19,10 @@
 | apis | 经发布者确认的 API 数组；DX11、DX12、Vulkan、OpenGL 中选择 |
 | files | 文件清单数组，每项含 path、role、sha256 |
 | files.path | 扁平文件名，不能包含路径 |
-| files.role | addon 或 nr-runtime |
+| files.role | addon、bridge 或 nr-runtime |
 | files.sha256 | 真实文件内容的 64 位小写 SHA-256 |
 
-`addon` 必须且只能有一个，扩展名为 `.addon64`。可选 `nr-runtime` 只能名为 `nvngx_dlssnr.dll`。可选 `rightsNotice` 为组件版权说明。
+`addon` 必须且只能有一个，扩展名为 `.addon64`。`bridge` 只能名为 `nrchain_nvngx.dll`，`nr-runtime` 只能名为 `nvngx_dlssnr.dll`。可选 `rightsNotice` 为组件版权说明。
 
 ## 离线打包工具
 

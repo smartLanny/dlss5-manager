@@ -9,12 +9,12 @@ const { leaf, noLinks, sha256, durableWrite } = require('../src/core/safety.cjs'
 async function main() {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--addon', '--runtime', '--version', '--api', '--out', '--sign-key', '--key-id', '--component-manifest'].includes(args[i]) || !args[i + 1]) throw new Error('参数不完整或未知。');
+    if (!['--addon', '--bridge', '--runtime', '--version', '--api', '--out', '--sign-key', '--key-id', '--component-manifest'].includes(args[i]) || !args[i + 1]) throw new Error('参数不完整或未知。');
     opts[args[i].slice(2)] = args[i + 1];
   }
-  if (!opts.addon || !opts.version || !opts.api || !opts.out) throw new Error('用法：npm run pack:addon -- --addon /本地/插件.addon64 --version 0.4.2beta --api DX12 --out /私下发布/0.4.2beta.dlss5pkg [--runtime /本地/nvngx_dlssnr.dll] [--sign-key /私有/ed25519.pem --key-id publisher-1]');
+  if (!opts.addon || !opts.version || !opts.api || !opts.out) throw new Error('用法：npm run pack:addon -- --addon /本地/插件.addon64 --version 0.4.3r3 --api DX12 --out /私下发布/0.4.3r3.dlss5pkg [--bridge /本地/nrchain_nvngx.dll] [--runtime /本地/nvngx_dlssnr.dll]');
   const entries = [], files = [];
-  for (const [input, role] of [[opts.addon, 'addon'], [opts.runtime, 'nr-runtime']]) {
+  for (const [input, role] of [[opts.addon, 'addon'], [opts.bridge, 'bridge'], [opts.runtime, 'nr-runtime']]) {
     if (!input) continue;
     await noLinks(path.resolve(input)); const st = await fs.stat(input);
     if (!st.isFile() || st.size > MAX_PACKAGE / 2) throw new Error('输入文件不是普通文件或过大。');

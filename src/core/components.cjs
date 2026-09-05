@@ -3,7 +3,7 @@
 const { fail, HASH, leaf } = require('./safety.cjs');
 const APIS = new Set(['DX11', 'DX12', 'Vulkan', 'OpenGL']);
 const CHANNELS = new Set(['stable', 'beta', 'local']);
-const COMPONENTS = new Set(['nr-before-sr', 'nr-runtime', 'reshade', 'dxvk', 'enb', 'streamline']);
+const COMPONENTS = new Set(['nr-before-sr', 'nr-runtime', 'bridge', 'reshade', 'dxvk', 'enb', 'streamline']);
 function plain(value) { return value && typeof value === 'object' && !Array.isArray(value); }
 function text(value, max = 160) { return typeof value === 'string' && value.length > 0 && value.length <= max && !/[\x00-\x1f\x7f]/.test(value); }
 function fields(value, names) {
@@ -58,14 +58,16 @@ function validateComponent(c) {
   version(c.version); version(c.managerMinVersion); checkBounds(c.managerMinVersion, c.managerMaxVersion);
   if (!uniqueStrings(c.architectures, new Set(['x64']), 1, 1) || !uniqueStrings(c.supportedApis, APIS, 1, 4)) fail('COMPONENT_SCHEMA', '组件架构或 API 清单无效。');
   if (c.rollbackProtocol !== 'manager-journal-v1') fail('ROLLBACK_PROTOCOL', '不支持此恢复协议，不能安全安装该组件。');
-  if (!Array.isArray(c.files) || c.files.length < 1 || c.files.length > 2) fail('COMPONENT_SCHEMA', '需要一个 addon 和可选的 NR runtime。');
+  if (!Array.isArray(c.files) || c.files.length < 1 || c.files.length > 4) fail('COMPONENT_SCHEMA', '组件文件数量超出安全上限。');
   const names = new Set(); let addons = 0;
   for (const f of c.files) {
     fields(f, ['path', 'role', 'sha256', 'size']); const name = leaf(f.path).toLowerCase();
     if (names.has(name) || typeof f.sha256 !== 'string' || !HASH.test(f.sha256) || !Number.isSafeInteger(f.size) || f.size < 64 || f.size > 256 * 1024 * 1024) fail('COMPONENT_FILE', '组件文件名、大小或校验值无效。');
     names.add(name);
     if (f.role === 'addon' && name.endsWith('.addon64')) addons++;
-    else if (f.role !== 'nr-runtime' || name !== 'nvngx_dlssnr.dll') fail('PROTECTED_FILE', '组件清单不能授予覆盖代理或系统 DLL 的权限。');
+    else if (f.role === 'nr-runtime' && name === 'nvngx_dlssnr.dll') { /* approved runtime slot */ }
+    else if (f.role === 'bridge' && name === 'nrchain_nvngx.dll') { /* approved bridge slot */ }
+    else fail('PROTECTED_FILE', '组件清单不能授予覆盖代理或系统 DLL 的权限。');
   }
   if (addons !== 1) fail('COMPONENT_FILE', '组件必须且只能包含一个 addon。');
   if (!Array.isArray(c.dependencies) || c.dependencies.length > 8 || !Array.isArray(c.conflicts) || c.conflicts.length > 16) fail('COMPONENT_SCHEMA', '依赖或冲突清单无效。');

@@ -7,11 +7,12 @@ const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Engine } = require('./core/engine.cjs');
 const { PlayerService } = require('./core/player.cjs');
+const { RUNTIME_PROFILES } = require('./core/runtime.cjs');
 const { registerFeedback } = require('./feedback-ipc.cjs');
 const { CATALOG } = require('./core/packages.cjs');
 const { discoverSteam, manualScanRoot } = require('./core/discovery.cjs');
 const { discoverEpic } = require('./core/stores.cjs');
-const { artwork } = require('./core/artwork.cjs');
+const { artwork, artworkInfo, artworkRoot, cacheFile } = require('./core/artwork.cjs');
 const { download } = require('./core/network.cjs');
 const { peInfo } = require('./core/platform.cjs');
 const { fail, validId, inside, noLinks, assertGameRoot, friendlyError, durableWrite } = require('./core/safety.cjs');
@@ -24,7 +25,8 @@ let win, engine, player, operationBusy = false, bundleError = null, waitControll
 function progress(message) { if (win && !win.isDestroyed()) win.webContents.send('manager:progress', String(message).slice(0, 150)); }
 async function publicState() {
   const history = await engine.history();
-  return { version: VERSION, platform: process.platform, catalog: CATALOG, games: engine.state.games.map(g => ({ ...g, preferredPackages: { A: player.preferred(g, 'A')?.id || null, B: player.preferred(g, 'B')?.id || null } })), packages: engine.state.packages, history: history.map(j => ({ id: j.id, gameId: j.gameId, version: j.version, createdAt: j.createdAt, restoredAt: j.restoredAt, status: j.status, operation: j.operation, fileCount: j.changes.length, keptEnvironmentCount: j.retainedEnvironment?.length || 0 })), links: LINKS, bundleError, preferences: engine.state.preferences || {}, bundledCount: engine.state.packages.filter(p => p.distribution === 'bundled').length };
+  const packages = engine.state.packages.map(p => ({ id: p.id, manifest: { version: p.manifest.version }, displayName: p.displayName || `装机宅 ${p.manifest.version}`, language: p.language || 'zh-CN', channel: p.channel || (p.manifest.version.includes('beta') ? 'beta' : 'stable'), distribution: p.distribution || 'local', compatibility: p.compatibility || '待验证', runtimeProfile: p.runtimeProfile || 'auto', importedAt: p.importedAt, fileCount: p.manifest.files.length }));
+  return { version: VERSION, platform: process.platform, catalog: CATALOG, gpu: engine.state.gpu || null, games: engine.state.games.map(g => ({ ...g, preferredPackages: { A: player.preferred(g, 'A')?.id || null, B: player.preferred(g, 'B')?.id || null }, selectedPackageId: player.preferred(g)?.id || null })), packages, history: history.map(j => ({ id: j.id, gameId: j.gameId, version: j.version, createdAt: j.createdAt, restoredAt: j.restoredAt, status: j.status, operation: j.operation, fileCount: j.changes.length, keptEnvironmentCount: j.retainedEnvironment?.length || 0 })), links: LINKS, bundleError, preferences: engine.state.preferences || {}, bundledCount: engine.state.packages.filter(p => p.distribution === 'bundled').length };
 }
 function senderAllowed(event) { return win && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame && event.senderFrame.url === 'app://ui/index.html'; }
 function handle(name, fn, mutates = false) {
@@ -44,7 +46,7 @@ async function addFile(exe) {
   const scanRoot = manualScanRoot(exe); await assertGameRoot(scanRoot, engine.root);
   const existing = engine.state.games.find(g => g.exe?.toLowerCase() === exe.toLowerCase());
   if (existing) { existing.hidden = false; await engine.save(); return existing.id; }
-  const g = { id: crypto.randomUUID(), name: path.basename(exe, path.extname(exe)).replace(/[-_]Win64[-_]Shipping/i, ''), scanRoot, exe, api: '', kind: 'unknown', source: 'manual', candidates: [], installed: null };
+  const g = { id: crypto.randomUUID(), name: path.basename(exe, path.extname(exe)).replace(/[-_]Win64[-_]Shipping/i, ''), scanRoot, exe, api: '', kind: 'unknown', source: 'manual', launchExecutables: [path.basename(exe)], candidates: [], installed: null };
   engine.state.games.push(g); await player.identify(g.id); return g.id;
 }
 async function scanLibrary(chooseFolder = false) {
@@ -52,14 +54,46 @@ async function scanLibrary(chooseFolder = false) {
   if (chooseFolder) { const p = await dialog.showOpenDialog(win, { title: '选择包含 steamapps 的游戏库', properties: ['openDirectory'] }); if (p.canceled) return null; roots = p.filePaths; }
   progress('正在查找游戏');
   const steam = await discoverSteam(roots), epic = await discoverEpic(); let added = 0;
-  for (const g of [...steam.games, ...epic]) if (!engine.state.games.some(x => x.scanRoot.toLowerCase() === g.scanRoot.toLowerCase())) { engine.state.games.push(g); added++; }
+  for (const found of [...steam.games, ...epic]) {
+    const existing = engine.state.games.find(x => x.scanRoot.toLowerCase() === found.scanRoot.toLowerCase());
+    if (existing) {
+      const preserve = {
+        id: existing.id, installed: existing.installed, hidden: existing.hidden,
+        selectedPackageId: existing.selectedPackageId, ab: existing.ab,
+        acknowledgedRisks: existing.acknowledgedRisks, readiness: existing.readiness,
+        source: found.source || existing.source, steamId: found.steamId || existing.steamId, appId: found.appId || existing.appId,
+        steamRoot: found.steamRoot || existing.steamRoot, catalogId: found.catalogId || existing.catalogId, epicAppName: found.epicAppName || existing.epicAppName,
+        launchExecutables: found.launchExecutables?.length ? found.launchExecutables : existing.launchExecutables,
+        artworkUrls: found.artworkUrls?.length ? found.artworkUrls : existing.artworkUrls,
+        exe: found.exe || existing.exe, api: found.api || existing.api,
+        apiEvidence: found.apiEvidence || existing.apiEvidence,
+        candidates: found.candidates?.length ? found.candidates : existing.candidates,
+        gpu: existing.gpu, runtimeProfile: existing.runtimeProfile
+      };
+      Object.assign(existing, found, preserve);
+    } else { engine.state.games.push(found); added++; }
+  }
+  for (const g of engine.state.games) {
+    try { await player.identify(g.id); } catch { /* A game with an ambiguous layout remains visible for one-click observation. */ }
+    try {
+      const info = await artworkInfo(g, engine.root, nativeImage, engine.state.preferences?.onlineArtwork !== false, 'portrait');
+      const hero = await artworkInfo(g, engine.root, nativeImage, engine.state.preferences?.onlineArtwork !== false, 'hero');
+      if (info || hero) g.artwork = { ...(g.artwork || {}), source: info?.source || hero?.source || g.artwork?.source || 'official', portrait: !!info || !!g.artwork?.portrait, hero: !!hero || !!g.artwork?.hero };
+    } catch { /* Artwork is optional; the UI keeps a deterministic placeholder. */ }
+  }
   await engine.save();
-  // Do not spend minutes parsing every game before showing its poster; identify on first selection/install.
-  return { added, total: steam.games.length + epic.length, notes: steam.notes };
+  return { added, total: steam.games.length + epic.length, notes: [...steam.notes, ...(epic.length ? [] : [])] };
 }
 function registerHandlers() {
   registerFeedback({ handle, engine, win, dialog, shell, clipboard });
   handle('state', publicState);
+  handle('gpu', async () => { const value = await player.gpu(); engine.state.gpu = value; await engine.save(); return value; });
+  handle('set-gpu-profile', async ({ profileId }) => {
+    if (!Object.hasOwn(RUNTIME_PROFILES, profileId)) fail('GPU_PROFILE_UNKNOWN', '请选择受支持的显卡运行环境。');
+    const family = profileId === 'rtx50' ? 'RTX50' : profileId === 'rtx40' ? 'RTX40' : 'RTX20/30';
+    engine.state.gpu = { family, profileId, families: [family], names: [], source: 'user-selected', reliable: false };
+    await engine.save(); return engine.state.gpu;
+  }, true);
   handle('add-game', async () => {
     const pick = await dialog.showOpenDialog(win, { title: '添加游戏：选择游戏程序', properties: ['openFile'], filters: [{ name: '游戏程序', extensions: ['exe'] }] });
     return pick.canceled ? null : addFile(pick.filePaths[0]);
@@ -126,7 +160,25 @@ function registerHandlers() {
     const file = p.filePaths[0]; await noLinks(file); if ((await fs.stat(file)).size > 8 * 1024 * 1024) fail('IMAGE_SIZE', '图片太大，请选择 8 MB 以内的海报。');
     const image = nativeImage.createFromBuffer(await fs.readFile(file)), size = image.getSize();
     if (image.isEmpty() || size.width * size.height > 40000000) fail('IMAGE_INVALID', '无法读取这张图片。');
-    const dir = path.join(engine.root, 'artwork'); await noLinks(dir); await fs.mkdir(dir, { recursive: true }); await durableWrite(path.join(dir, validId(gameId) + '.jpg'), image.resize({ width: 450 }).toJPEG(85)); return true;
+    const dir = artworkRoot(engine.root); const target = cacheFile(engine.game(gameId), engine.root, 'portrait'); await noLinks(dir); await fs.mkdir(dir, { recursive: true }); await durableWrite(target, image.resize({ width: 900 }).toJPEG(85)); engine.game(gameId).artwork = { ...(engine.game(gameId).artwork || {}), source: 'local', portrait: true }; await engine.save(); return true;
+  }, true);
+  handle('recover-original', async ({ gameId }) => {
+    const rows = await engine.history(gameId);
+    const records = rows.filter(h => !['reverted', 'aborted'].includes(h.status));
+    if (!records.length) return { count: 0 };
+    const answer = await dialog.showMessageBox(win, { type: 'question', message: '恢复安装前状态？', detail: '会按顺序撤销本工具记录的安装、切换和卸载，只处理受管文件；其他模组、设置和存档不会删除。', buttons: ['取消', '恢复'], defaultId: 0, cancelId: 0, noLink: true });
+    if (answer.response !== 1) return { count: 0 };
+    let count = 0;
+    // history() is newest-first. Revert the latest transition first so each
+    // record sees the files produced by the operation immediately before it.
+    for (const record of records) { await engine.recover(gameId, record.id); count++; }
+    const g = engine.game(gameId); g.readiness = null; g.selectedPackageId = null; await engine.save();
+    return { count };
+  }, true);
+  handle('refresh-artwork', async ({ gameId }) => {
+    const g = engine.game(gameId); const info = await artworkInfo(g, engine.root, nativeImage, engine.state.preferences?.onlineArtwork !== false, 'portrait'); const hero = await artworkInfo(g, engine.root, nativeImage, engine.state.preferences?.onlineArtwork !== false, 'hero');
+    if (info || hero) { g.artwork = { ...(g.artwork || {}), source: info?.source || hero?.source || 'official', portrait: !!info || !!g.artwork?.portrait, hero: !!hero || !!g.artwork?.hero }; await engine.save(); }
+    return !!(info || hero);
   }, true);
   handle('preferences', async ({ onlineArtwork, showHidden }) => {
     if (typeof onlineArtwork !== 'boolean' || typeof showHidden !== 'boolean') fail('INPUT_INVALID', '设置无效。');
@@ -151,14 +203,14 @@ app.whenReady().then(async () => {
   protocol.handle('app', async request => {
     try {
       const u = new URL(request.url);
-      if (u.hostname === 'cover') { const g = engine.game(u.pathname.slice(1)); const b = await artwork(g, engine.root, nativeImage, engine.state.preferences?.onlineArtwork !== false); return b ? new Response(b, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache' } }) : new Response('', { status: 404 }); }
+      if (u.hostname === 'cover') { const g = engine.game(u.pathname.slice(1)); const b = await artwork(g, engine.root, nativeImage, engine.state.preferences?.onlineArtwork !== false, u.searchParams.get('kind') === 'hero' ? 'hero' : 'portrait'); return b ? new Response(b, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache' } }) : new Response('', { status: 404 }); }
       const file = decodeURIComponent(u.pathname).slice(1);
       if (u.hostname !== 'ui' || !['index.html', 'app.css', 'app.js', 'feedback.js', 'feedback.css'].includes(file)) return new Response('', { status: 404 });
       return net.fetch(pathToFileURL(path.join(__dirname, 'ui', file)).toString());
     } catch { return new Response('', { status: 404 }); }
   });
   session.defaultSession.setPermissionRequestHandler((_w, _p, cb) => cb(false)); session.defaultSession.setPermissionCheckHandler(() => false);
-  win = new BrowserWindow({ width: 1320, height: 900, minWidth: 960, minHeight: 680, title: '装机宅 DLSS5', backgroundColor: '#101418', autoHideMenuBar: true, titleBarStyle: 'hidden', titleBarOverlay: { color: '#101418', symbolColor: '#e4e9ef', height: 38 }, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, devTools: !app.isPackaged } });
+  win = new BrowserWindow({ width: 1320, height: 900, minWidth: 960, minHeight: 680, title: '装机宅 DLSS5', backgroundColor: '#101418', autoHideMenuBar: true, titleBarStyle: 'hidden', titleBarOverlay: { color: '#101418', symbolColor: '#e4e9ef', height: 38 }, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), additionalArguments: process.env.DLSS5_SKIP_AUTO_SCAN === '1' ? ['--dlss5-skip-auto-scan'] : [], contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, devTools: !app.isPackaged } });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); win.webContents.on('will-navigate', e => e.preventDefault()); win.webContents.on('will-attach-webview', e => e.preventDefault());
   win.on('close', e => { if (operationBusy || engine.busy) { e.preventDefault(); dialog.showMessageBox(win, { type: 'info', message: '正在处理游戏文件，请完成后再关闭。', buttons: ['返回'] }); } });
   registerHandlers(); await win.loadURL('app://ui/index.html');

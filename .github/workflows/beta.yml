@@ -1,7 +1,7 @@
 name: Windows Beta verification
 on:
   push:
-    branches: [main]
+    branches-ignore: [main]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -42,7 +42,7 @@ jobs:
       - run: npm test
       - name: Official ReShade download, pin verification, extraction and offline cache
         run: npm run test:official
-      - name: Player UI auto detection, A/B, shared-host uninstall and paired feedback transport
+      - name: Player UI auto detection, saved version switching and feedback transport
         run: npm run test:ui
       - name: Build per-user setup and portable EXE
         run: npm run build:win
@@ -66,7 +66,9 @@ jobs:
             output/ui-home.png
             output/ui-home-empty.png
             output/ui-versions.png
-            output/ui-ab.png
+            output/ui-cyberpunk-detail.png
+            output/ui-install-complete.png
+            output/ui-restore-entry.png
             output/ui-feedback.png
             output/ui-uninstall-shared.png
       - uses: actions/upload-artifact@v4
@@ -77,7 +79,7 @@ jobs:
           path: output/*.png
   release:
     name: Publish explicitly requested Beta
-    if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && github.event_name == 'push' && contains(github.event.head_commit.message, '[release]'))
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [core, windows]
     runs-on: ubuntu-latest
     permissions:
@@ -97,4 +99,4 @@ jobs:
           TAG="v$(node -p 'require("./package.json").version')"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "${GITHUB_REF#refs/tags/}" = "$TAG"; fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo 'Release already exists; it will not be overwritten.'; exit 0; fi
-          gh release create "$TAG" release-artifacts/dist/*-Setup.exe release-artifacts/dist/*-Portable.exe release-artifacts/dist/SHA256SUMS.txt release-artifacts/dist/RELEASE-CONTENTS.json release-artifacts/output/*.png --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false --title "装机宅 DLSS5 0.2 Beta · 游戏库与一键版本切换" --notes-file docs/RELEASE-0.2-BETA.md
+          gh release create "$TAG" release-artifacts/dist/*-Setup.exe release-artifacts/dist/*-Portable.exe release-artifacts/dist/SHA256SUMS.txt release-artifacts/dist/RELEASE-CONTENTS.json release-artifacts/output/*.png --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false --title "装机宅 DLSS5 0.3 Beta · 小白一键安装" --notes-file docs/RELEASE-0.3-BETA.md

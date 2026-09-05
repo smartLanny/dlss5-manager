@@ -33,7 +33,7 @@ async function ensureReShade(root, progress = () => {}, dependencies = {}) {
   if (await digestFile(target) === pin.dll.sha256) return { source: target, after: pin.dll.sha256, role: 'reshade-loader', version: pin.version };
   // Tampered cache is not overwritten silently. It is outside the game and can be replaced after retaining it.
   if (await digestFile(target)) await fs.rename(target, path.join(dir, `changed-${Date.now()}.bin`));
-  progress('正在准备 ReShade 运行环境');
+  progress('正在准备运行环境');
   const bytes = await (dependencies.download || download)(pin.url, { maxBytes: pin.size, headers: { Referer: 'https://reshade.me/', 'User-Agent': 'Zhuangjizhai-DLSS5-Manager' } });
   const dll = unpackOfficial(bytes, pin);
   await durableWrite(target, dll, true);

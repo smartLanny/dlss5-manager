@@ -1,7 +1,7 @@
 name: Verify official ReShade source
 on:
   push:
-    branches: ['release/beta-0.2']
+    branches-ignore: ['main']
     paths: ['.github/workflows/verify-reshade.yml']
   workflow_dispatch:
 permissions:

@@ -1,4 +1,29 @@
 {
-  "schema": 1,
-  "packages": []
+  "schema": 2,
+  "product": "zhuangjizhai-dlss5-manager",
+  "packageMode": "online",
+  "packages": [],
+  "runtimeProfiles": {
+    "rtx50": {
+      "id": "rtx50",
+      "version": "310.8.0",
+      "mode": "online"
+    },
+    "rtx40": {
+      "id": "rtx40",
+      "version": "310.8.0-RTX40",
+      "mode": "online",
+      "experimental": true
+    },
+    "rtx20-30": {
+      "id": "rtx20-30",
+      "version": "310.8.SF-v2",
+      "mode": "online",
+      "experimental": true
+    }
+  },
+  "reshade": {
+    "mode": "online",
+    "version": "6.8.0"
+  }
 }

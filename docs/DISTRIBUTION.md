@@ -1,8 +1,8 @@
 # 发行组件与玩家操作分离
 
-目标完整包预置推荐版 0.3.3.4、测试版 0.4.1beta，后续版本可追加。公开源码不依赖、查询或复制 NR 私有源码/未公开构建。当前可用公共管理器构建没有成品输入，`resources/components/catalog.json` 的 packages 为空，发行组成必须如实说明。
+目标完整包预置真实的 0.3.3.4（默认稳定）、0.4.1r2、0.4.3r3；公开源码不依赖、查询或复制 NR 私有源码/未公开构建。
 
-发行方在管理器仓库以外放置已经获准分发的标准 `.dlss5pkg` 文件和 `distribution.json`。清单结构为 `redistributionApproved: true`、`packages: [{file, sha256}]`。运行 `npm run pack:distribution -- <该目录>`，工具校验原包、版本和文件完整性，再写入忽略的 resources/components/*.dlss5pkg 与本地构建目录。接着 `npm run build:win`。
+发行方在管理器仓库以外放置已经获准分发的 `.addon64`/`.dlss5pkg`、bridge 和三套 runtime，并提供 `distribution.json`：其中必须明确 `redistributionApproved: true`，每个 addon、bridge、package 和 runtime 都必须列出发布者 SHA-256。运行 `npm run build:offline -- --components "D:\\DLSS5-Full-Payload"`。工具校验三个版本、x64 架构、bridge 和每套 runtime，缺任一项就停止，不写入半成品 catalog；随后构建并生成 Setup、Portable、Offline-Full-Portable、RELEASE-CONTENTS.json、COMPONENTS.json 和 SHA256SUMS.txt。
 
 这一步是维护者发行工作，不是玩家安装步骤。玩家拿到完整包无需导入或填版本、API、哈希。缺任一首发组件时打包工具报错，不用空入口冒充已内置。NR 原始文件字节不改写，签名凭据不进入仓库。发布包组成清单按实际资源计算，不硬编码 addonBundled=true。
 
