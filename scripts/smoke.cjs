@@ -43,7 +43,10 @@ async function main() {
     await page.locator('[data-action="preview"]').click(); await page.waitForFunction(() => document.querySelector('#planDialog').open && document.body.getAttribute('aria-busy') !== 'true');
     if (process.platform === 'win32') {
       const blocked = await page.locator('#planContent .notice.danger').count();
-      if (blocked) throw new Error('Windows synthetic install unexpectedly blocked: ' + await page.locator('#planContent .notice.danger').innerText());
+      if (blocked) {
+        const nativeEvidence = await page.evaluate(() => ({ environment: activePlan.report.environment, directorySignals: activePlan.report.antiCheat }));
+        throw new Error('Windows synthetic install unexpectedly blocked: ' + await page.locator('#planContent .notice.danger').innerText() + '\nIsolated CI evidence: ' + JSON.stringify(nativeEvidence));
+      }
       await page.locator('#confirmCompatibility').check(); await page.locator('#confirmPlan').check();
       await page.locator('#confirmApply').click();
       await page.waitForFunction(() => !document.querySelector('#planDialog').open && document.body.getAttribute('aria-busy') !== 'true');
