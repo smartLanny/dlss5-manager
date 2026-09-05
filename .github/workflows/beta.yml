@@ -69,6 +69,7 @@ jobs:
             dist/RELEASE-CONTENTS.json
             output/ui-home.png
             output/ui-versions.png
+            output/ui-feedback.png
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -101,7 +102,8 @@ jobs:
           release-artifacts/dist/RELEASE-CONTENTS.json
           release-artifacts/output/ui-home.png
           release-artifacts/output/ui-versions.png
+          release-artifacts/output/ui-feedback.png
           --repo "$GITHUB_REPOSITORY"
           --verify-tag --prerelease --latest=false
-          --title "装机宅 DLSS5 安装器 0.1 Beta"
-          --notes-file docs/RELEASE-0.1-BETA.md
+          --title "装机宅 DLSS5 安装器 $TAG"
+          --notes-file docs/RELEASE-0.2-BETA.md
