@@ -1,0 +1,23 @@
+name: Player UX source review
+on:
+  push:
+    branches: ['feat/player-lifecycle-feedback']
+    paths: ['.github/workflows/ux-source-review.yml']
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 85ae77828db9c744de5be5ea514a35d7783b4126
+          persist-credentials: false
+      - run: git archive --format=zip --output=manager-ux-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manager-ux-source
+          path: manager-ux-source.zip
+          retention-days: 3
+          if-no-files-found: error

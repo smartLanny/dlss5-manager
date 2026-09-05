@@ -9,12 +9,16 @@ const { validateComponent, installManifest } = require('./components.cjs');
 const MAX_FILE = 256 * 1024 * 1024, MAX_PACKAGE = 512 * 1024 * 1024;
 const CATALOG = [
   { version: '0.3.3.4', title: '推荐版', description: '日常使用的稳定版本', channel: 'stable', badge: '推荐', compatibility: '待验证' },
-  { version: '0.4.2beta', title: '测试版', description: '色彩与效率强化', channel: 'beta', badge: '测试', compatibility: '待验证' }
+  { version: '0.4.1beta', title: '测试版', description: '可与稳定版一键对比', channel: 'beta', badge: '测试', compatibility: '待验证' }
 ];
 function guessVersion(name) {
-  const hit = String(name).match(/(?:^|[^0-9])v?((?:[0-9]+\.){1,3}[0-9]+(?:-?beta(?:\.[0-9]+)?)?)/i);
-  return hit ? hit[1].replace(/beta/i, 'beta') : null;
+  const text = String(name);
+  const hit = text.match(/(?:^|[^0-9A-Za-z])v?(beta[- ]?)?((?:[0-9]+\.){1,3}[0-9]+)(-?beta(?:\.[0-9]+)?)?(-r[0-9]+)?/i);
+  if (!hit || /^\.[0-9]/.test(text.slice(hit.index + hit[0].length))) return null;
+  const beta = hit[1] ? 'beta' : (hit[3] || '').replace(/^-/, '').toLowerCase();
+  return hit[2] + beta + (hit[4] || '').toLowerCase();
 }
+
 function archiveName(name) {
   if (typeof name !== 'string' || name.length > 240 || name.startsWith('/') || name.includes('\\')) fail('UNSAFE_NAME', '压缩包路径不安全。');
   for (const part of (name.endsWith('/') ? name.slice(0,-1) : name).split('/')) leaf(part);

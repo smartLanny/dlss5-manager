@@ -51,11 +51,13 @@ test('forged ownership and corrupted original backup block upgrades', async t =>
 test('v1 state is read without rewriting; v2 import snapshots metadata and blocks unsafe downgrade', async t => {
   const { engine, game, add, dependencies } = await setup(t); const a = await add('0.4.2beta');
   await engine.apply((await engine.preview(game.id, a.id)).id, consent);
+  // Synthesize metadata written by the legacy v1 manager after installation.
+  engine.state.schema = 1; await engine.save();
   const before = await fs.readFile(engine.stateFile);
   const fresh = await new Engine(engine.root, dependencies).init(); assert.deepEqual(await fs.readFile(engine.stateFile), before);
   const imported = fresh.state.packages[0]; imported.componentManifest = component(); imported.manifest = installManifest(imported.componentManifest);
   await fresh.save(); assert.equal(fresh.state.schema, 2);
-  const entries = await fs.readdir(path.join(engine.root, 'metadata-backups')); assert.equal(entries.length, 1);
+  const entries = (await fs.readdir(path.join(engine.root, 'metadata-backups'))).filter(n => n.startsWith('state-v1-')); assert.equal(entries.length, 1);
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(engine.root, 'metadata-backups', entries[0]), 'utf8')), JSON.parse(before));
   const reopened = await new Engine(engine.root, dependencies).init(); assert.equal(reopened.state.schema, 2);
   assert.equal((await reopened.preview(game.id, imported.id)).noOp, true);

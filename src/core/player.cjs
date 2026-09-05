@@ -4,17 +4,11 @@ const path = require('node:path');
 const { fail, sha256, leaf, noLinks, digestFile, readJson } = require('./safety.cjs');
 const { detectGame, API_DLL } = require('./detection.cjs');
 const { importPackage } = require('./packages.cjs');
-const { compareVersions } = require('./components.cjs');
 const { ensureReShade, loaderName } = require('./reshade.cjs');
 const { runningGame, peInfo } = require('./platform.cjs');
 class PlayerService {
   constructor(engine, dependencies = {}) { this.engine = engine; this.deps = { detect: detectGame, runtime: ensureReShade, running: runningGame, ...dependencies }; }
-  preferred(game, slot) {
-    if (slot && game.ab?.[slot]) return this.engine.state.packages.find(p => p.id === game.ab[slot]);
-    const all = this.engine.state.packages;
-    if (slot === 'B') return [...all].reverse().find(p => /beta/i.test(p.manifest.version)) || all.at(-1);
-    return all.find(p => p.manifest.version === '0.3.3.4') || [...all].filter(p => !/beta|local/i.test(p.manifest.version)).sort((a, b) => compareVersions(b.manifest.version, a.manifest.version) || 0)[0] || all.at(-1);
-  }
+  preferred(game, slot) { return require('./versions.cjs').preferredPackage(this.engine.state.packages, game, slot); }
   async import(file, options = {}) {
     const pkg = await importPackage(file, { acceptLocal: true, ...options }, path.join(this.engine.root, 'packages'), require('../../config/trusted-keys.json'));
     const existing = this.engine.state.packages.find(p => p.sourceHash === pkg.sourceHash);

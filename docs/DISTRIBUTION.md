@@ -1,6 +1,6 @@
 # 发行组件与玩家操作分离
 
-目标完整包预置推荐版 0.3.3.4、测试版 0.4.2beta，后续版本可追加。公开源码不依赖、查询或复制 NR 私有源码/未公开构建。当前可用公共管理器构建没有成品输入，`resources/components/catalog.json` 的 packages 为空，发行组成必须如实说明。
+目标完整包预置推荐版 0.3.3.4、测试版 0.4.1beta，后续版本可追加。公开源码不依赖、查询或复制 NR 私有源码/未公开构建。当前可用公共管理器构建没有成品输入，`resources/components/catalog.json` 的 packages 为空，发行组成必须如实说明。
 
 发行方在管理器仓库以外放置已经获准分发的标准 `.dlss5pkg` 文件和 `distribution.json`。清单结构为 `redistributionApproved: true`、`packages: [{file, sha256}]`。运行 `npm run pack:distribution -- <该目录>`，工具校验原包、版本和文件完整性，再写入忽略的 resources/components/*.dlss5pkg 与本地构建目录。接着 `npm run build:win`。
 
