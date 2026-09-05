@@ -1,0 +1,21 @@
+name: Public source review snapshot
+on:
+  push:
+    branches: ['release/beta-0.2']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive only committed public manager files
+        run: git archive --format=zip --output=manager-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manager-public-source
+          path: manager-source.zip
+          retention-days: 7
+          if-no-files-found: error
