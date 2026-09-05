@@ -92,21 +92,21 @@ test('VDF parser handles escaped Windows paths and comments, rejects unbalanced 
   assert.throws(() => parseVdf('"libraryfolders" { "0" "x"'));
   assert.equal(Object.getPrototypeOf(parseVdf('"__proto__" "safe"')), null);
 });
-test('anti-cheat files create a blocking report, including nested directories', async t => {
+test('anti-cheat files generate actionable risk warnings, including nested directories', async t => {
   const { game, gameRoot, engine } = await setup(t);
   await fs.mkdir(path.join(gameRoot, 'EasyAntiCheat')); await fs.writeFile(path.join(gameRoot, 'EasyAntiCheat', 'EasyAntiCheat_EOS_Setup.exe'), pe(1, false));
   const report = await scanGame(game, engine.root);
-  assert.ok(report.antiCheat.length > 0); assert.ok(report.blockers.some(b => b.includes('反作弊')));
+  assert.ok(report.antiCheat.length > 0); assert.ok(report.riskWarnings.some(w => w.code === 'ANTI_CHEAT_FILES')); assert.ok(!report.blockers.some(b => b.includes('反作弊')));
   for (const n of ['EasyAntiCheat', 'BEService', 'BattlEye', 'xhunter', 'ACE-guard', 'AntiCheatExpert']) assert.ok(AC.test(n), n);
 });
 test('scan budget exhaustion is explicit, never a clean safety result', async t => {
   const root = await temp(t); for (let i = 0; i < 4; i++) await fs.writeFile(path.join(root, `${i}.txt`), 'x');
   assert.ok((await walk(root, { maxEntries: 2 })).problems.length);
 });
-test('known online Steam ID cannot be overridden to offline', async t => {
+test('known online Steam ID warning cannot be hidden by an offline label', async t => {
   const { game, engine } = await setup(t); game.steamId = '730'; game.kind = 'offline';
   const report = await scanGame(game, engine.root);
-  assert.ok(report.blockers.some(b => b.includes('修改分类不能解除')));
+  assert.ok(report.riskWarnings.some(w => w.code === 'ONLINE_GAME')); assert.ok(!report.blockers.some(b => b.includes('在线')));
 });
 test('ACE detection respects name boundaries and does not flag Windows interface services', () => {
   for (const name of ['nsi Network Store Interface Service', 'Device Interface Service', 'InterfaceService']) assert.equal(AC.test(name), false, name);

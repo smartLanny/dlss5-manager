@@ -1,19 +1,23 @@
 {
   "name": "zhuangjizhai-dlss5-manager",
-  "version": "0.2.0-beta.1",
+  "version": "0.2.0-beta.2",
   "description": "装机宅 DLSS5 安装器：独立、安全、可回滚的 NR before SR 插件管理器",
   "author": "装机宅",
   "license": "UNLICENSED",
   "private": true,
   "main": "src/main.cjs",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.cjs",
     "test:ui": "node scripts/smoke.cjs",
     "check": "node scripts/check.cjs",
     "build:win": "node scripts/icon.cjs && electron-builder --win nsis portable --x64 --publish never",
-    "pack:addon": "node scripts/pack-addon.cjs"
+    "pack:addon": "node scripts/pack-addon.cjs",
+    "test:official": "node scripts/test-official-runtime.cjs",
+    "pack:distribution": "node scripts/stage-components.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
@@ -25,10 +29,33 @@
     "productName": "装机宅 DLSS5 安装器",
     "copyright": "Copyright © 2026 装机宅",
     "asar": true,
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["src/**/*", "config/**/*", "LICENSE", "NOTICE.md", "package.json"],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "config/**/*",
+      "LICENSE",
+      "NOTICE.md",
+      "THIRD_PARTY_NOTICES.md",
+      "package.json"
+    ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico",
       "requestedExecutionLevel": "asInvoker",
       "executableName": "Zhuangjizhai-DLSS5-Manager"
@@ -40,7 +67,19 @@
       "artifactName": "Zhuangjizhai-DLSS5-Manager-${version}-Setup.${ext}",
       "shortcutName": "装机宅 DLSS5 安装器"
     },
-    "portable": { "artifactName": "Zhuangjizhai-DLSS5-Manager-${version}-Portable.${ext}" },
-    "publish": null
+    "portable": {
+      "artifactName": "Zhuangjizhai-DLSS5-Manager-${version}-Portable.${ext}"
+    },
+    "publish": null,
+    "extraResources": [
+      {
+        "from": "resources/components",
+        "to": "components",
+        "filter": [
+          "catalog.json",
+          "*.dlss5pkg"
+        ]
+      }
+    ]
   }
 }

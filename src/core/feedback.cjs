@@ -55,11 +55,12 @@ async function readFeedbackBundle(file) {
 }
 function validateInput(input) {
   if (!input || !Object.hasOwn(TYPES, input.type) || typeof input.symptom !== 'string' || !input.symptom.trim() || input.symptom.length > 2000 || typeof input.steps !== 'string' || input.steps.length > 2000 || typeof input.unstable !== 'boolean' || typeof input.shareGameName !== 'boolean') fail('FEEDBACK_INPUT', '请选择问题类型、填写现象和复现步骤，或注明无法稳定复现。');
-  if (!input.steps.trim() && !input.unstable) fail('FEEDBACK_INPUT', '请填写复现步骤，或勾选“无法稳定复现”。');
+
 }
 function buildFeedback({ managerVersion, game, report = null, history = [], input, attachment = null, eventCode = null }) {
   validateInput(input);
   const quality = [];
+  if (!input.steps.trim() && !input.unstable) quality.push('未提供复现步骤');
   if (!game) quality.push('未选择游戏');
   if (!game?.installed?.version) quality.push('未发现已安装组件版本');
   if (!report) quality.push('没有本次扫描证据');
@@ -94,7 +95,7 @@ function buildFeedback({ managerVersion, game, report = null, history = [], inpu
     `管理器：${managerVersion}；组件：${snapshot.componentVersion}；渠道：${snapshot.channel}`,
     `游戏：${snapshot.game}；EXE：${snapshot.exe}`,
     `API：${snapshot.api}；架构：${snapshot.architecture}；游戏兼容性：待验证`,
-    '', '## 问题现象', sanitize(input.symptom), '', '## 复现步骤', sanitize(input.steps) || '无法稳定复现',
+    '', '## 问题现象', sanitize(input.symptom), '', '## 复现步骤', sanitize(input.steps) || (input.unstable ? '无法稳定复现' : '尚未提供复现步骤'),
     ...(input.unstable && input.steps.trim() ? ['补充：无法稳定复现'] : []),
     '', '## 可核验证据', `扫描时间：${snapshot.scanTime || '未扫描'}；阻断项数量：${snapshot.blockerCount}`,
     `ReShade：${snapshot.loader}；完整 Add-on 能力：${snapshot.addonSupport}`,

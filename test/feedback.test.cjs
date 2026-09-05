@@ -20,9 +20,10 @@ test('free text masks paths, links, credentials, mail, account fields and machin
   for (const value of values) assert.notEqual(sanitize(value), value, value);
   assert.equal(sanitize('画面在转动视角时闪烁'), '画面在转动视角时闪烁');
 });
-test('report requires symptom and steps or explicit unstable reproduction', () => {
+test('report requires symptom; missing optional steps remains an explicit evidence gap', () => {
   assert.throws(() => buildFeedback({ managerVersion: '0.2.0-beta.1', input: input({ symptom: '' }) }));
-  assert.throws(() => buildFeedback({ managerVersion: '0.2.0-beta.1', input: input({ steps: '' }) }));
+  const draft = buildFeedback({ managerVersion: '0.2.0-beta.1', input: input({ steps: '' }) });
+  assert.ok(draft.quality.includes('未提供复现步骤')); assert.ok(draft.publicReport.includes('尚未提供复现步骤')); assert.ok(!draft.publicReport.includes('无法稳定复现'));
   assert.ok(buildFeedback({ managerVersion: '0.2.0-beta.1', input: input({ steps: '', unstable: true }) }).quality.length);
 });
 test('default report omits game name, EXE, source paths and raw scanner strings', async t => {

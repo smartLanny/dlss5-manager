@@ -24,8 +24,8 @@ async function main() {
     assert.equal(devToolsOpened, false, 'Packaged application must not allow DevTools to open.');
     const state = await page.evaluate(async () => (await window.manager.state()).value);
     assert.equal(state.version, require('../package.json').version); assert.equal(state.platform, 'win32');
-    assert.equal(state.catalog.length, 3); assert.equal(state.packages.length, 0);
-    await page.locator('.nav-item[data-page="versions"]').click(); assert.equal(await page.locator('.version-card').count(), 3);
+    assert.equal(state.catalog.length, 2); assert.equal(state.packages.length, 0);
+    await page.locator('.nav[data-page="versions"]').click(); assert.equal(await page.locator('.recommended > div').count(), 2); assert.equal(await page.locator('#importHash,#gameApi').count(), 0);
     const userData = await application.evaluate(({ app }) => app.getPath('userData'));
     const sentinel = path.join(userData, 'manager-data', 'ci-preserve-backup-sentinel.txt');
     await fs.writeFile(sentinel, 'Synthetic CI sentinel: uninstall must preserve manager recovery data.');
