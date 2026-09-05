@@ -1,0 +1,84 @@
+name: Apply reviewed 0.2 source patch
+on:
+  push:
+    branches: ['release/beta-0.2']
+    paths: ['development/next-candidate.part*', '.github/workflows/apply-next-candidate.yml']
+permissions:
+  contents: write
+concurrency:
+  group: apply-reviewed-next-source
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'smartLanny/dlss5-manager' && github.ref == 'refs/heads/release/beta-0.2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact base and reviewed patch integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '902f95c29f533ae0710984072007ebbffef4d7e3'
+          cat development/next-candidate.part{1,2,3,4,5} > /tmp/next-candidate.patch.gz
+          echo '56c32a30857a586921aeae6d1eed823360ea57a52f0f9f0ac8b60ef6d020bdc4  /tmp/next-candidate.patch.gz' | sha256sum --check
+          gzip -dc /tmp/next-candidate.patch.gz > /tmp/next-candidate.patch
+          echo 'c8cced72e0b0bed16bffe6052ae92fd88a5c79f3c209c0bc67d95efe8bfd7ac6  /tmp/next-candidate.patch' | sha256sum --check
+          git apply --check --whitespace=error /tmp/next-candidate.patch
+          git apply --index --whitespace=error /tmp/next-candidate.patch
+      - name: Validate exact changed-file allowlist and local safety tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          expected = set('''README.md
+          config/loader-evidence.json
+          docs/COMPATIBILITY.md
+          docs/COMPONENTS-V2.md
+          docs/FEEDBACK-CONTRACT.md
+          docs/RELEASE-0.2-BETA.md
+          package-lock.json
+          package.json
+          scripts/pack-addon.cjs
+          scripts/smoke.cjs
+          src/core/components.cjs
+          src/core/engine.cjs
+          src/core/feedback.cjs
+          src/core/loader.cjs
+          src/core/packages.cjs
+          src/core/scanner.cjs
+          src/feedback-ipc.cjs
+          src/main.cjs
+          src/preload.cjs
+          src/ui/app.js
+          src/ui/feedback.css
+          src/ui/feedback.js
+          src/ui/index.html
+          test/components.test.cjs
+          test/feedback.test.cjs
+          test/next-engine.test.cjs
+          test/next-helpers.cjs'''.splitlines())
+          actual = set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())
+          assert actual == expected, (actual - expected, expected - actual)
+          PY
+          git diff --cached --check
+          npm run check
+          npm test
+      - name: Commit only the reviewed source to the development branch
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/release/beta-0.2 | cut -f1)" = "$EXPECTED_HEAD"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: 0.2 candidate component contracts, idempotent recovery and private feedback center'
+          git push origin HEAD:refs/heads/release/beta-0.2
