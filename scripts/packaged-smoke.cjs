@@ -11,7 +11,17 @@ async function main() {
     await page.waitForFunction(() => window.manager && document.body.getAttribute('aria-busy') !== 'true', null, { timeout: 60000 });
     assert.equal(await application.evaluate(({ app }) => app.isPackaged), true);
     const prefs = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences());
-    assert.equal(prefs.devTools, false); assert.equal(prefs.sandbox, true); assert.equal(prefs.contextIsolation, true); assert.equal(prefs.nodeIntegration, false);
+    assert.equal(prefs.sandbox, true); assert.equal(prefs.contextIsolation, true); assert.equal(prefs.nodeIntegration, false);
+    // devTools is a BrowserWindow option, not a reliably returned last-web-preferences field.
+    // Verify the documented security behavior rather than accepting an absent property.
+    // https://www.electronjs.org/docs/latest/api/structures/web-preferences
+    const devToolsOpened = await application.evaluate(async ({ BrowserWindow }) => {
+      const contents = BrowserWindow.getAllWindows()[0].webContents;
+      contents.openDevTools({ mode: 'detach' });
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return contents.isDevToolsOpened();
+    });
+    assert.equal(devToolsOpened, false, 'Packaged application must not allow DevTools to open.');
     const state = await page.evaluate(async () => (await window.manager.state()).value);
     assert.equal(state.version, require('../package.json').version); assert.equal(state.platform, 'win32');
     assert.equal(state.catalog.length, 3); assert.equal(state.packages.length, 0);
