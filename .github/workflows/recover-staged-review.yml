@@ -1,0 +1,44 @@
+name: Recover staged public manager review
+on:
+  push:
+    branches: ['release/beta-0.2']
+    paths: ['.github/workflows/recover-staged-review.yml']
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Recover text only, never apply or execute the staged content
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import urllib.request,os,json,base64,lzma,hashlib
+          shas=['bb2f53f09a76aa17065e23e10447e11b26f85ab0','bcd577281934b1c6b7bf48ada5015e2face36fba','d1ecc7ae858b20d342e7b827631e5bb50739853f']
+          chunks=[]
+          for sha in shas:
+              req=urllib.request.Request('https://api.github.com/repos/smartLanny/dlss5-manager/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=20) as r: data=json.load(r)
+              assert data['sha']==sha and data['encoding']=='base64'
+              chunks.append(base64.b64decode(data['content']))
+          packed=b''.join(chunks)
+          decoder=lzma.LZMADecompressor(memlimit=512*1024*1024)
+          decoded=decoder.decompress(packed,max_length=2*1024*1024)
+          assert len(decoded)<=2*1024*1024
+          text=decoded.decode('utf-8',errors='replace')
+          assert text.startswith('diff --git ')
+          open('staged-manager-review.patch','w').write(text)
+          metadata={'complete':decoder.eof,'compressedBytes':len(packed),'decodedBytes':len(decoded),'sha256':hashlib.sha256(decoded).hexdigest(),'blobs':shas}
+          open('staged-manager-review.json','w').write(json.dumps(metadata,indent=2))
+          print(json.dumps(metadata))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staged-manager-review
+          path: |
+            staged-manager-review.patch
+            staged-manager-review.json
+          retention-days: 7
+          if-no-files-found: error
