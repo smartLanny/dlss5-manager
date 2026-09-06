@@ -24,8 +24,8 @@ async function main() {
     assert.equal(devToolsOpened, false, 'Packaged application must not allow DevTools to open.');
     const state = await page.evaluate(async () => (await window.manager.state()).value);
     assert.equal(state.version, require('../package.json').version); assert.equal(state.platform, 'win32');
-    assert.ok(state.catalog.some(x => x.version === '0.3.3.4')); assert.ok(state.catalog.some(x => x.version === '0.4.1r2')); assert.ok(state.catalog.some(x => x.version === '0.4.3r3'));
-    assert.ok(state.packages.length >= 3); await page.locator('.nav[data-page="versions"]').click(); assert.equal(await page.locator('.recommended > div').count(), 2); assert.equal(await page.locator('#importHash,#gameApi').count(), 0);
+    assert.ok(state.catalog.some(x => x.version === '0.2.0-beta.2')); assert.ok(state.catalog.some(x => x.version === '0.3.3.4')); assert.ok(state.catalog.some(x => x.version === '0.4.1r2')); assert.ok(state.catalog.some(x => x.version === '0.4.3r3'));
+    assert.ok(state.packages.length >= 4); await page.locator('.nav[data-page="versions"]').click(); assert.equal(await page.locator('.recommended > div').count(), 2); assert.equal(await page.locator('#importHash,#gameApi').count(), 0);
     const userData = await application.evaluate(({ app }) => app.getPath('userData'));
     const sentinel = path.join(userData, 'manager-data', 'ci-preserve-backup-sentinel.txt');
     await fs.writeFile(sentinel, 'Synthetic CI sentinel: uninstall must preserve manager recovery data.');

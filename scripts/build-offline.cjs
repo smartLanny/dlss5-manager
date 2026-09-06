@@ -9,7 +9,7 @@ const { writeZip, validateManifest, importPackage, guessVersion, peBytes } = req
 const { leaf, noLinks, sha256, atomicJson, durableWrite } = require('../src/core/safety.cjs');
 const { RUNTIME_PROFILES } = require('../src/core/runtime.cjs');
 
-const REQUIRED = ['0.3.3.4', '0.4.1r2', '0.4.3r3'];
+const REQUIRED = ['0.2.0-beta.2', '0.3.3.4', '0.4.1r2', '0.4.3r3'];
 const PROFILE_KEYS = Object.keys(RUNTIME_PROFILES);
 const normalizeVersion = value => String(value || '').toLowerCase().replace(/-r(?=\d)/g, 'r').replace(/^v/, '');
 const languageOf = name => /\.en(?:[-.]|$)/i.test(name) || /english/i.test(name) ? 'en' : 'zh-CN';
@@ -71,6 +71,13 @@ async function makePackage(root, item, bridge) {
     if (sha256(b) !== bridge.sha256.toLowerCase()) throw new Error('nrchain_nvngx.dll 校验失败。');
     if (!peBytes(b)) throw new Error('bridge 不是 Windows x64 文件。');
     entries.push([name, b]); files.push({ path: name, role: 'bridge', sha256: sha256(b), size: b.length });
+  }
+  const config = item.config ? await readEntry(root, { file: item.config }, ['.ini']) : null;
+  if (config && path.basename(config).toLowerCase() !== 'nr_before_sr.ini') throw new Error('NR 配置文件必须命名为 nr_before_sr.ini。');
+  if (config) {
+    const c = await fs.readFile(config); if (c.length > 64 * 1024) throw new Error('nr_before_sr.ini 超过 64 KiB。');
+    if (!item.configSha256 || sha256(c) !== item.configSha256.toLowerCase()) throw new Error('nr_before_sr.ini 缺少或未通过发布者 SHA-256。');
+    entries.push(['nr_before_sr.ini', c]); files.push({ path: 'nr_before_sr.ini', role: 'nr-config', sha256: sha256(c), size: c.length });
   }
   const manifest = validateManifest({ schema: 1, component: 'nr-before-sr', version, architecture: 'x64', apis: ['DX12'], files });
   const outputName = `dlss5-nr-before-sr-${normalizeVersion(version)}-${languageOf(path.basename(addon))}.dlss5pkg`;

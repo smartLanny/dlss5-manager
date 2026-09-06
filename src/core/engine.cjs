@@ -20,7 +20,7 @@ function environmentFingerprint(report) {
 
 function allowedFile(name) {
   leaf(name);
-  if (!/\.addon64$/i.test(name) && !['nvngx_dlssnr.dll', 'nrchain_nvngx.dll'].includes(name.toLowerCase())) fail('PROTECTED_FILE', '不允许修改此文件。管理器不会覆盖图形代理或系统 DLL。');
+  if (!/\.addon64$/i.test(name) && !['nvngx_dlssnr.dll', 'nrchain_nvngx.dll', 'nr_before_sr.ini'].includes(name.toLowerCase())) fail('PROTECTED_FILE', '不允许修改此文件。管理器不会覆盖图形代理或系统 DLL。');
   return name;
 }
 function validHash(hash) { if (hash !== null && !HASH.test(hash)) fail('JOURNAL_INVALID', '记录的文件校验值无效。'); }
@@ -290,7 +290,7 @@ class Engine {
           const next = clone(plan.nextFiles);
           for (let i = 0; i < plan.changes.length; i++) {
             const c = plan.changes[i], index = next.findIndex(f => f.name.toLowerCase() === c.name.toLowerCase()), old = next[index];
-            const file = { name: c.name, role: c.role, componentId: c.role === 'reshade-loader' ? 'reshade' : c.role === 'nr-runtime' ? 'nr-runtime' : c.role === 'bridge' ? 'bridge' : 'nr-before-sr', sha256: c.after, baselineHash: old ? old.baselineHash : c.before, baseline: old ? old.baseline : c.before ? { tx: txid, index: i } : null };
+            const file = { name: c.name, role: c.role, componentId: c.role === 'reshade-loader' ? 'reshade' : c.role === 'nr-runtime' ? 'nr-runtime' : ['bridge', 'nr-bridge'].includes(c.role) ? 'bridge' : 'nr-before-sr', sha256: c.after, baselineHash: old ? old.baselineHash : c.before, baseline: old ? old.baseline : c.before ? { tx: txid, index: i } : null };
             if (index >= 0) next[index] = file; else next.push(file);
           }
           journal.afterInstalled = { componentId: 'nr-before-sr', channel: plan.componentInfo?.channel || 'local', version: journal.version, packageId: plan.packageId, installedAt: new Date().toISOString(), files: next };

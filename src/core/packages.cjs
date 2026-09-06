@@ -5,10 +5,11 @@ const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { fail, leaf, sha256, HASH, noLinks, durableWrite } = require('./safety.cjs');
 const { APIS } = require('./platform.cjs');
-const { validateComponent, installManifest } = require('./components.cjs');
+const { canonicalRole, validateComponent, installManifest } = require('./components.cjs');
 const MAX_FILE = 256 * 1024 * 1024, MAX_PACKAGE = 512 * 1024 * 1024;
 const CATALOG = [
-  { version: '0.3.3.4', title: '稳定版', description: '日常使用，默认优先选择。', channel: 'stable', badge: '推荐', compatibility: '待验证' },
+  { version: '0.2.0-beta.2', title: '早期版本', description: '支持 2K27；用于对比旧版效果，默认仍使用 0.3.3.4。', channel: 'beta', badge: '可切换', compatibility: '待验证' },
+  { version: '0.3.3.4', title: '稳定版', description: '支持燕云十六声；日常使用，默认优先选择。', channel: 'stable', badge: '推荐', compatibility: '待验证' },
   { version: '0.4.1r2', title: '早期测试版', description: '保留用于对比画面效果。', channel: 'beta', badge: '测试', compatibility: '待验证' },
   { version: '0.4.3r3', title: '最新 Beta', description: '最新装机宅 Beta；部分显卡运行环境仍属实验性。', channel: 'beta', badge: 'Beta', compatibility: '待验证' }
 ];
@@ -110,9 +111,11 @@ function validateManifest(manifest) {
     if (!f || !HASH.test(f.sha256)) fail('HASH_INVALID', '更新包缺少有效的 SHA-256 清单。');
     const n = leaf(f.path).toLowerCase();
     if (names.has(n)) fail('MANIFEST_INVALID', '文件清单存在重名。'); names.add(n);
-    if (f.role === 'addon' && n.endsWith('.addon64')) addons++;
-    else if (f.role === 'nr-runtime' && n === 'nvngx_dlssnr.dll') { /* approved runtime slot */ }
-    else if (f.role === 'bridge' && n === 'nrchain_nvngx.dll') { /* approved bridge slot */ }
+    const role = canonicalRole(f.role);
+    if (role === 'addon' && n.endsWith('.addon64')) addons++;
+    else if (role === 'nr-runtime' && n === 'nvngx_dlssnr.dll') { /* approved runtime slot */ }
+    else if (role === 'bridge' && n === 'nrchain_nvngx.dll') { /* approved bridge slot */ }
+    else if (role === 'nr-config' && n === 'nr_before_sr.ini') { /* fixed NR configuration slot */ }
     else fail('PROTECTED_FILE', '更新包尝试修改不允许的 DLL。管理器不替换图形代理、系统 DLL 或游戏引擎文件。');
   }
   if (addons !== 1) fail('MANIFEST_INVALID', '更新包必须且只能包含一个 x64 addon。');
@@ -152,6 +155,7 @@ async function importPackage(file, options, cacheRoot, trustedKeys = {}) {
       componentManifest = validateComponent(envelope.manifest);
       manifest = validateManifest(installManifest(componentManifest));
     } else manifest = validateManifest(envelope.manifest);
+    manifest = { ...manifest, files: manifest.files.map(f => ({ ...f, role: canonicalRole(f.role) })) };
     if (envelope.signature || envelope.keyId) {
       const key = trustedKeys[envelope.keyId];
       if (!key) fail('UNKNOWN_SIGNER', '发布签名尚未受此管理器信任，请更新管理器，不要绕过验证。');
@@ -165,7 +169,8 @@ async function importPackage(file, options, cacheRoot, trustedKeys = {}) {
   if (trust !== 'publisher-verified' && options.acceptLocal !== true) fail('SOURCE_CONFIRMATION', '请确认文件来自装机宅发布渠道。哈希校验不等于发布者身份认证。');
   for (const f of manifest.files) {
     const p = payloads.get(f.path.toLowerCase());
-    if (!p || (f.size !== undefined && p.bytes.length !== f.size) || sha256(p.bytes) !== f.sha256 || !peBytes(p.bytes)) fail('PAYLOAD_INVALID', '插件架构、文件类型或 SHA-256 不匹配，需要有效的 x64 DLL / addon。');
+    const role = canonicalRole(f.role), validPayload = role === 'nr-config' ? !!p && p.bytes.length <= 64 * 1024 : !!p && peBytes(p.bytes);
+    if (!p || (f.size !== undefined && p.bytes.length !== f.size) || sha256(p.bytes) !== f.sha256 || !validPayload) fail('PAYLOAD_INVALID', '插件架构、文件类型或 SHA-256 不匹配，需要有效的 x64 插件文件。');
   }
   const id = crypto.randomUUID(), dir = path.join(cacheRoot, id);
   await noLinks(cacheRoot); await fs.mkdir(dir, { recursive: true, mode: 0o700 });

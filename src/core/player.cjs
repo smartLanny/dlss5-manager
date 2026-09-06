@@ -14,6 +14,11 @@ function packageLanguage(pkg) {
   if (pkg.language) return pkg.language;
   return /\.en\.addon64$/i.test(pkg.manifest?.files?.find(f => f.role === 'addon')?.path || '') ? 'en' : 'zh-CN';
 }
+function packageSupportsGpu(pkg, family) {
+  const families = pkg.componentManifest?.hardwareFamilies;
+  if (!Array.isArray(families) || !families.length || !family || family === 'unknown') return true;
+  return families.includes(family) || families.includes('RTX20-30') && ['RTX20', 'RTX30'].includes(family);
+}
 
 class PlayerService {
   constructor(engine, dependencies = {}) {
@@ -92,7 +97,7 @@ class PlayerService {
     const e = this.engine, g = e.game(id);
     progress('正在识别游戏'); await this.identify(id);
     if (!g.exe || !g.api) fail('NEEDS_IDENTIFICATION', '暂时无法确定游戏运行程序；请启动一次游戏后再试。');
-    const pkg = packageId ? e.package(packageId) : this.preferred(g, slot);
+    let pkg = packageId ? e.package(packageId) : this.preferred(g, slot);
     if (!pkg) return { kind: 'need-package' };
     if (g.api !== 'DX12') return { kind: 'blocked', messages: [`已识别：${g.api}。当前装机宅版本暂未验证该 API，未修改游戏文件。`], report: { blockers: [], riskWarnings: [] }, unsupportedApi: true };
     progress('正在检查游戏文件'); const report = await e.deps.scan(g, e.root);
@@ -102,6 +107,12 @@ class PlayerService {
     const selectedGpu = await this.gpu();
     const profileId = selectedGpu?.profileId;
     if (!profileId) return { kind: 'needs-gpu', messages: ['暂时无法可靠识别 NVIDIA 显卡，未选择运行环境，也没有修改游戏文件。请在高级设置中选择后再试。'], gpu: selectedGpu, report };
+    if (!packageSupportsGpu(pkg, selectedGpu.family)) {
+      const sameLanguage = e.state.packages.find(p => p.id !== pkg.id && p.manifest.version === pkg.manifest.version && packageLanguage(p) === packageLanguage(pkg) && packageSupportsGpu(p, selectedGpu.family));
+      const alternate = sameLanguage || e.state.packages.find(p => p.id !== pkg.id && pkg.manifest.version === p.manifest.version && packageSupportsGpu(p, selectedGpu.family));
+      if (alternate) pkg = alternate;
+      else return { kind: 'blocked', messages: [`已识别 ${selectedGpu.family}，所选版本没有对应的运行环境；未修改游戏文件。请选择其他可用版本。`], report, gpu: selectedGpu };
+    }
     const runtimeAlreadyInPackage = pkg.manifest.files.some(f => f.role === 'nr-runtime');
     let runtimeFile = null;
     if (!runtimeAlreadyInPackage) {

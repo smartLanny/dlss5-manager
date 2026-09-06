@@ -9,17 +9,17 @@ const { leaf, noLinks, sha256, durableWrite } = require('../src/core/safety.cjs'
 async function main() {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--addon', '--bridge', '--runtime', '--version', '--api', '--out', '--sign-key', '--key-id', '--component-manifest'].includes(args[i]) || !args[i + 1]) throw new Error('参数不完整或未知。');
+    if (!['--addon', '--bridge', '--runtime', '--config', '--version', '--api', '--out', '--sign-key', '--key-id', '--component-manifest'].includes(args[i]) || !args[i + 1]) throw new Error('参数不完整或未知。');
     opts[args[i].slice(2)] = args[i + 1];
   }
-  if (!opts.addon || !opts.version || !opts.api || !opts.out) throw new Error('用法：npm run pack:addon -- --addon /本地/插件.addon64 --version 0.4.3r3 --api DX12 --out /私下发布/0.4.3r3.dlss5pkg [--bridge /本地/nrchain_nvngx.dll] [--runtime /本地/nvngx_dlssnr.dll]');
+  if (!opts.addon || !opts.version || !opts.api || !opts.out) throw new Error('用法：npm run pack:addon -- --addon /本地/插件.addon64 --version 0.4.3r3 --api DX12 --out /私下发布/0.4.3r3.dlss5pkg [--bridge /本地/nrchain_nvngx.dll] [--runtime /本地/nvngx_dlssnr.dll] [--config /本地/nr_before_sr.ini]');
   const entries = [], files = [];
-  for (const [input, role] of [[opts.addon, 'addon'], [opts.bridge, 'bridge'], [opts.runtime, 'nr-runtime']]) {
+  for (const [input, role] of [[opts.addon, 'addon'], [opts.bridge, 'bridge'], [opts.runtime, 'nr-runtime'], [opts.config, 'nr-config']]) {
     if (!input) continue;
     await noLinks(path.resolve(input)); const st = await fs.stat(input);
     if (!st.isFile() || st.size > MAX_PACKAGE / 2) throw new Error('输入文件不是普通文件或过大。');
     const data = await fs.readFile(input), name = leaf(path.basename(input));
-    if (!peBytes(data)) throw new Error('只允许有效的 Windows x64 addon / runtime。');
+    if (role === 'nr-config' ? name.toLowerCase() !== 'nr_before_sr.ini' || data.length > 64 * 1024 : !peBytes(data)) throw new Error(role === 'nr-config' ? '配置文件必须是固定的 nr_before_sr.ini 且不超过 64 KiB。' : '只允许有效的 Windows x64 addon / runtime。');
     entries.push([name, data]); files.push({ path: name, role, sha256: sha256(data), size: data.length });
   }
   let manifest = validateManifest({ schema: 1, component: 'nr-before-sr', architecture: 'x64', version: opts.version, apis: opts.api.split(','), files,

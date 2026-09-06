@@ -6,6 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { component } = require('./next-helpers.cjs');
 const { pe, temp } = require('./helpers.cjs');
+const { sha256 } = require('../src/core/safety.cjs');
 const { validateComponent, installManifest, componentForPackage, componentBlockers, compareVersions, changeKind } = require('../src/core/components.cjs');
 const { importPackage, writeZip, canonical, validateManifest } = require('../src/core/packages.cjs');
 const { loaderStatus } = require('../src/core/loader.cjs');
@@ -14,6 +15,21 @@ const report = () => ({ files: [], componentEvidence: [] });
 test('v2 declares identity, channel, exact sizes and independent recovery protocol', () => {
   const c = component(); assert.equal(validateComponent(c), c); assert.equal(componentForPackage(pkg(c)), c);
   assert.equal(installManifest(c).files[0].size, 1024);
+});
+test('publisher v2 package aliases accept the fixed NR bridge and configuration file', async t => {
+  const root = await temp(t), addon = pe(1), bridge = pe(2), runtime = pe(3), config = Buffer.alloc(64, 0x20);
+  const c = component(); c.version = '0.4.1-r2'; c.files = [
+    { path: 'nr.addon64', role: 'addon', sha256: sha256(addon), size: addon.length },
+    { path: 'nvngx_dlssnr.dll', role: 'nr-runtime', sha256: sha256(runtime), size: runtime.length },
+    { path: 'nrchain_nvngx.dll', role: 'nr-bridge', sha256: sha256(bridge), size: bridge.length },
+    { path: 'nr_before_sr.ini', role: 'nr-config', sha256: sha256(config), size: config.length }
+  ];
+  const file = path.join(root, 'publisher.dlss5pkg'); await fs.writeFile(file, writeZip([
+    ['manifest.json', Buffer.from(JSON.stringify({ manifest: c }))], ['nr.addon64', addon], ['nvngx_dlssnr.dll', runtime], ['nrchain_nvngx.dll', bridge], ['nr_before_sr.ini', config]
+  ]));
+  const imported = await importPackage(file, { acceptLocal: true }, path.join(root, 'cache'));
+  assert.deepEqual(imported.manifest.files.map(f => f.role), ['addon', 'nr-runtime', 'bridge', 'nr-config']); assert.equal(componentForPackage(imported).version, '0.4.1-r2');
+  assert.throws(() => validateComponent({ ...c, files: [...c.files.slice(0, 3), { ...c.files[3], path: 'arbitrary.ini' }] }), e => e.code === 'PROTECTED_FILE');
 });
 for (const [name, modify] of [
   ['schema version', c => c.schemaVersion = 3], ['component identity', c => c.componentId = 'reshade'],

@@ -1,6 +1,6 @@
 # 发行组件与玩家操作分离
 
-目标完整包预置真实的 0.3.3.4（默认稳定）、0.4.1r2、0.4.3r3；公开源码不依赖、查询或复制 NR 私有源码/未公开构建。
+目标完整包预置真实的 0.2.0-beta.2、0.3.3.4（默认稳定）、0.4.1r2、0.4.3r3；公开源码不依赖、查询或复制 NR 私有源码/未公开构建。
 
 发行方在管理器仓库以外放置已经获准分发的 `.addon64`/`.dlss5pkg`、bridge 和三套 runtime，并提供 `distribution.json`：其中必须明确 `redistributionApproved: true`，每个 addon、bridge、package 和 runtime 都必须列出发布者 SHA-256。运行 `npm run build:offline -- --components "D:\\DLSS5-Full-Payload"`。工具校验三个版本、x64 架构、bridge 和每套 runtime，缺任一项就停止，不写入半成品 catalog；随后构建并生成 Setup、Portable、Offline-Full-Portable、RELEASE-CONTENTS.json、COMPONENTS.json 和 SHA256SUMS.txt。
 

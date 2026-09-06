@@ -6,6 +6,9 @@ const pending = new Set(['preparing', 'prepared', 'applying', 'restoring', 'reco
 const version = v => String(v || '').startsWith('0.0.0-local.') ? '本地版本' : v || '未安装';
 const when = v => new Date(v).toLocaleString('zh-CN', { hour12: false });
 const language = p => p?.language === 'en' ? 'English' : '简体中文';
+function supportsGpu(p) { const families = p?.hardwareFamilies || []; const family = state?.gpu?.family; return !families.length || !family || family === 'unknown' || families.includes(family) || families.includes('RTX20-30') && ['RTX20', 'RTX30'].includes(family); }
+function visiblePackageRows(rows) { const byLanguage = new Map(); for (const p of rows) { const key = p.language || 'zh-CN', old = byLanguage.get(key); if (!old || supportsGpu(p) && !supportsGpu(old)) byLanguage.set(key, p); } return [...byLanguage.values()]; }
+function packageNote(v) { return v === '0.2.0-beta.2' ? '支持 2K27；可在游戏详情中保存并切换。' : v === '0.3.3.4' ? '支持燕云十六声；默认稳定版本，可在游戏详情中保存并切换。' : '可在游戏详情中直接切换；失败时自动恢复旧版本。'; }
 function toast(message, error = false) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').className = error ? 'error' : ''; $('toast').hidden = false; toastTimer = setTimeout(() => { $('toast').hidden = true; }, error ? 11000 : 6500); }
 async function api(method, payload) { const r = await window.manager[method](payload); if (!r.ok) { const e = new Error(r.error.message); e.code = r.error.code; throw e; } return r.value; }
 async function run(label, fn) {
@@ -59,7 +62,7 @@ function renderVersions() {
   $('packageNotice').hidden = !!state.packages.length;
   $('packageNotice').textContent = '默认版本会随安装器准备；导入新的 addon 后，它会自动出现在游戏详情的版本列表。';
   const grouped = new Map(); for (const p of state.packages) { const k = p.manifest.version; if (!grouped.has(k)) grouped.set(k, []); grouped.get(k).push(p); }
-  $('packageList').innerHTML = state.packages.length ? [...grouped.entries()].sort((a, b) => b[0].localeCompare(a[0], undefined, { numeric: true })).map(([v, rows]) => `<article class="package-row"><span class="symbol">✦</span><div class="package-info"><h3>装机宅 ${esc(version(v))} ${v === '0.3.3.4' ? '<span class="tag">默认稳定</span>' : '<span class="tag neutral">可切换</span>'}</h3><p>${rows.map(language).join(' / ')} · ${rows[0].distribution === 'bundled' ? '安装器内置' : '本地导入'} · ${esc(when(rows[0].importedAt))}</p><details><summary>版本说明</summary><p>${v === '0.3.3.4' ? '默认稳定版本。其他版本可以在游戏详情中保存并切换。' : '可在游戏详情中直接切换；失败时自动恢复旧版本。'}</p></details></div></article>`).join('') : '<div class="empty-state compact"><h3>还没有其他版本</h3><p>导入装机宅发布的 addon，版本会自动识别，不需要填写参数。</p><button class="button secondary" data-action="import">导入新版本</button></div>';
+  $('packageList').innerHTML = state.packages.length ? [...grouped.entries()].sort((a, b) => b[0].localeCompare(a[0], undefined, { numeric: true })).map(([v, rows]) => `<article class="package-row"><span class="symbol">✦</span><div class="package-info"><h3>装机宅 ${esc(version(v))} ${v === '0.3.3.4' ? '<span class="tag">默认稳定</span>' : '<span class="tag neutral">可切换</span>'}</h3><p>${rows.map(language).join(' / ')} · ${rows[0].distribution === 'bundled' ? '安装器内置' : '本地导入'} · ${esc(when(rows[0].importedAt))}</p><details><summary>版本说明</summary><p>${esc(packageNote(v))}</p></details></div></article>`).join('') : '<div class="empty-state compact"><h3>还没有其他版本</h3><p>导入装机宅发布的 addon，版本会自动识别，不需要填写参数。</p><button class="button secondary" data-action="import">导入新版本</button></div>';
 }
 function renderHistory() {
   const latest = new Map(); for (const h of state.history) if (!['aborted', 'reverted'].includes(h.status) && !latest.has(h.gameId)) latest.set(h.gameId, h.id);
@@ -68,7 +71,10 @@ function renderHistory() {
 function packageOptions(g) {
   const current = selectedPackage(g)?.id;
   const groups = new Map(); for (const p of state.packages) { const v = p.manifest.version; if (!groups.has(v)) groups.set(v, []); groups.get(v).push(p); }
-  return [...groups.entries()].map(([v, rows]) => `<optgroup label="装机宅 ${esc(version(v))}${v === '0.3.3.4' ? '（默认稳定）' : ''}">${rows.map(p => `<option value="${esc(p.id)}"${p.id === current ? ' selected' : ''}>${esc(language(p))}</option>`).join('')}</optgroup>`).join('');
+  return [...groups.entries()].map(([v, rows]) => {
+    const note = v === '0.2.0-beta.2' ? '（支持 2K27）' : v === '0.3.3.4' ? '（默认稳定 · 支持燕云十六声）' : '';
+    return `<optgroup label="装机宅 ${esc(version(v))}${note}">${visiblePackageRows(rows).map(p => `<option value="${esc(p.id)}"${p.id === current ? ' selected' : ''}>${esc(language(p))}</option>`).join('')}</optgroup>`;
+  }).join('');
 }
 function apiLabel(g) {
   if (!g.api) return '正在自动识别图形 API';
@@ -149,7 +155,7 @@ $('saveGpuProfile').addEventListener('click', () => run('正在保存显卡选�
 $('exportLog').addEventListener('click', () => run('正在保存诊断', async () => { if (await api('export')) toast('诊断已保存到本机。'); })); $('checkUpdates').addEventListener('click', () => run('正在检查更新', async () => { const r = await api('check-updates'); $('updateContent').innerHTML = `<p>${r.current ? '当前没有更新版本' : `可用版本 ${esc(r.version)}`}</p><pre class="report-text">${esc(r.notes)}</pre>`; $('updateDialog').showModal(); }));
 for (const d of document.querySelectorAll('dialog')) d.addEventListener('cancel', e => { if (busy) e.preventDefault(); });
 run('正在读取游戏库', async () => {
-  await refresh();
+  await api('gpu').catch(() => null); await refresh();
   const needsEnrichment = state.games.some(g => (g.steamId || g.source === 'epic') && (!g.source || !g.exe || !g.artwork?.portrait));
   if (state.platform === 'win32' && !window.manager.skipAutoScan && (!state.games.length || needsEnrichment)) { await api('scan-library'); await refresh(); }
 });

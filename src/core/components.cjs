@@ -4,6 +4,9 @@ const { fail, HASH, leaf } = require('./safety.cjs');
 const APIS = new Set(['DX11', 'DX12', 'Vulkan', 'OpenGL']);
 const CHANNELS = new Set(['stable', 'beta', 'local']);
 const COMPONENTS = new Set(['nr-before-sr', 'nr-runtime', 'bridge', 'reshade', 'dxvk', 'enb', 'streamline']);
+// Some publisher-produced v2 packages used the more descriptive role names.
+// They are accepted only as aliases and are normalized to the narrow install roles below.
+function canonicalRole(role) { return role === 'nr-bridge' ? 'bridge' : role === 'addon' || role === 'nr-runtime' || role === 'bridge' || role === 'nr-config' ? role : null; }
 function plain(value) { return value && typeof value === 'object' && !Array.isArray(value); }
 function text(value, max = 160) { return typeof value === 'string' && value.length > 0 && value.length <= max && !/[\x00-\x1f\x7f]/.test(value); }
 function fields(value, names) {
@@ -53,9 +56,10 @@ function https(url) {
   try { const u = new URL(url); return u.protocol === 'https:' && !u.username && !u.password && !u.hash && !u.search; } catch { return false; }
 }
 function validateComponent(c) {
-  fields(c, ['schemaVersion', 'componentId', 'displayName', 'version', 'channel', 'managerMinVersion', 'managerMaxVersion', 'architectures', 'supportedApis', 'files', 'dependencies', 'conflicts', 'rollbackProtocol', 'source', 'license']);
+  fields(c, ['schemaVersion', 'componentId', 'displayName', 'version', 'channel', 'managerMinVersion', 'managerMaxVersion', 'architectures', 'hardwareFamilies', 'supportedApis', 'files', 'dependencies', 'conflicts', 'rollbackProtocol', 'source', 'license']);
   if (c.schemaVersion !== 2 || c.componentId !== 'nr-before-sr' || !text(c.displayName) || !CHANNELS.has(c.channel)) fail('COMPONENT_SCHEMA', '当前组件契约仅开放 NR before SR；其他 DLL 安装策略尚未开放。');
   version(c.version); version(c.managerMinVersion); checkBounds(c.managerMinVersion, c.managerMaxVersion);
+  if (c.hardwareFamilies !== undefined && !uniqueStrings(c.hardwareFamilies, new Set(['RTX50', 'RTX40', 'RTX20-30']), 1, 3)) fail('COMPONENT_SCHEMA', '组件适用的显卡范围无效。');
   if (!uniqueStrings(c.architectures, new Set(['x64']), 1, 1) || !uniqueStrings(c.supportedApis, APIS, 1, 4)) fail('COMPONENT_SCHEMA', '组件架构或 API 清单无效。');
   if (c.rollbackProtocol !== 'manager-journal-v1') fail('ROLLBACK_PROTOCOL', '不支持此恢复协议，不能安全安装该组件。');
   if (!Array.isArray(c.files) || c.files.length < 1 || c.files.length > 4) fail('COMPONENT_SCHEMA', '组件文件数量超出安全上限。');
@@ -64,9 +68,11 @@ function validateComponent(c) {
     fields(f, ['path', 'role', 'sha256', 'size']); const name = leaf(f.path).toLowerCase();
     if (names.has(name) || typeof f.sha256 !== 'string' || !HASH.test(f.sha256) || !Number.isSafeInteger(f.size) || f.size < 64 || f.size > 256 * 1024 * 1024) fail('COMPONENT_FILE', '组件文件名、大小或校验值无效。');
     names.add(name);
-    if (f.role === 'addon' && name.endsWith('.addon64')) addons++;
-    else if (f.role === 'nr-runtime' && name === 'nvngx_dlssnr.dll') { /* approved runtime slot */ }
-    else if (f.role === 'bridge' && name === 'nrchain_nvngx.dll') { /* approved bridge slot */ }
+    const role = canonicalRole(f.role);
+    if (role === 'addon' && name.endsWith('.addon64')) addons++;
+    else if (role === 'nr-runtime' && name === 'nvngx_dlssnr.dll') { /* approved runtime slot */ }
+    else if (role === 'bridge' && name === 'nrchain_nvngx.dll') { /* approved bridge slot */ }
+    else if (role === 'nr-config' && name === 'nr_before_sr.ini') { /* fixed NR configuration slot */ }
     else fail('PROTECTED_FILE', '组件清单不能授予覆盖代理或系统 DLL 的权限。');
   }
   if (addons !== 1) fail('COMPONENT_FILE', '组件必须且只能包含一个 addon。');
@@ -90,7 +96,7 @@ function validateComponent(c) {
 }
 function installManifest(c) {
   validateComponent(c);
-  return { schema: 1, component: c.componentId, version: c.version, architecture: 'x64', apis: [...c.supportedApis], files: c.files.map(f => ({ ...f })) };
+  return { schema: 1, component: c.componentId, version: c.version, architecture: 'x64', apis: [...c.supportedApis], files: c.files.map(f => ({ ...f, role: canonicalRole(f.role) })) };
 }
 function componentForPackage(pkg) {
   if (!pkg.componentManifest) return null; // 0.1 packages remain valid and are not rewritten.
@@ -120,4 +126,4 @@ function changeKind(previous, target, identical) {
   const result = compareVersions(target, previous);
   return result === null ? 'switch' : result < 0 ? 'downgrade' : 'upgrade';
 }
-module.exports = { validateComponent, installManifest, componentForPackage, componentBlockers, compareVersions, inRange, changeKind };
+module.exports = { canonicalRole, validateComponent, installManifest, componentForPackage, componentBlockers, compareVersions, inRange, changeKind };

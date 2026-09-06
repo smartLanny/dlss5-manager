@@ -7,6 +7,8 @@ const crypto = require('node:crypto');
 const { Engine, allowedFile } = require('../src/core/engine.cjs');
 const { sha256, atomicJson } = require('../src/core/safety.cjs');
 const { setup, pe, consent } = require('./helpers.cjs');
+const { component } = require('./next-helpers.cjs');
+const { importPackage, writeZip } = require('../src/core/packages.cjs');
 const code = expected => e => e.code === expected;
 
 test('install, update, rollback, uninstall restore exact original bytes', async t => {
@@ -32,6 +34,28 @@ test('new installation uninstall only removes owned file', async t => {
   await engine.apply((await engine.preview(game.id, null, 'uninstall')).id, consent);
   await assert.rejects(fs.stat(path.join(gameRoot, 'nr.addon64')), { code: 'ENOENT' });
   assert.equal(await fs.readFile(path.join(gameRoot, 'other.txt'), 'utf8'), 'keep');
+});
+test('publisher v2 fixed config survives install and uninstall transaction', async t => {
+  const { engine, game, gameRoot, root } = await setup(t);
+  const addon = pe(1), runtime = pe(2), bridge = pe(3), config = Buffer.alloc(64, 0x20);
+  const c = component(addon, { version: '0.4.1-r2', files: [
+    { path: 'nr.addon64', role: 'addon', sha256: sha256(addon), size: addon.length },
+    { path: 'nvngx_dlssnr.dll', role: 'nr-runtime', sha256: sha256(runtime), size: runtime.length },
+    { path: 'nrchain_nvngx.dll', role: 'nr-bridge', sha256: sha256(bridge), size: bridge.length },
+    { path: 'nr_before_sr.ini', role: 'nr-config', sha256: sha256(config), size: config.length }
+  ] });
+  const source = path.join(root, 'publisher.dlss5pkg');
+  await fs.writeFile(source, writeZip([
+    ['manifest.json', Buffer.from(JSON.stringify({ manifest: c }))],
+    ['nr.addon64', addon], ['nvngx_dlssnr.dll', runtime], ['nrchain_nvngx.dll', bridge], ['nr_before_sr.ini', config]
+  ]));
+  const pkg = await importPackage(source, { acceptLocal: true }, path.join(engine.root, 'packages'));
+  engine.state.packages.push(pkg); await engine.save();
+  const plan = await engine.preview(game.id, pkg.id); assert.deepEqual(plan.changes.map(x => x.name), ['nr.addon64', 'nvngx_dlssnr.dll', 'nrchain_nvngx.dll', 'nr_before_sr.ini']);
+  await engine.apply(plan.id, consent);
+  for (const [name, bytes] of [['nr.addon64', addon], ['nvngx_dlssnr.dll', runtime], ['nrchain_nvngx.dll', bridge], ['nr_before_sr.ini', config]]) assert.deepEqual(await fs.readFile(path.join(gameRoot, name)), bytes);
+  await engine.apply((await engine.preview(game.id, null, 'uninstall')).id, consent);
+  for (const name of ['nr.addon64', 'nvngx_dlssnr.dll', 'nrchain_nvngx.dll', 'nr_before_sr.ini']) await assert.rejects(fs.stat(path.join(gameRoot, name)), { code: 'ENOENT' });
 });
 test('switching differently named addon reuses owned target, avoids duplicate loading', async t => {
   const { engine, game, gameRoot, add } = await setup(t);
