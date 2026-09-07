@@ -1,0 +1,35 @@
+name: Launch profile preview contracts
+on:
+  push:
+    branches: [research/sr-mfg-launch-plans-20260908]
+  pull_request:
+    branches: [main]
+    paths:
+      - src/core/launch-profile-plan.cjs
+      - src/vendor/swapper-ini.cjs
+      - scripts/preview-launch-profile.cjs
+      - tests/launch-profile-plan.test.cjs
+      - .github/workflows/launch-profile-preview.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: launch-profile-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contract-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test actual configuration compilers and CLI (no game or driver writes)
+        run: node --test tests/launch-profile-plan.test.cjs
