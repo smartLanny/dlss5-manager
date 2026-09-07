@@ -72,13 +72,10 @@ function planNvidiaSr(request) {
 function uniqueTargets(text, targets) {
   const counts = new Map(); let section = ''; const sections = new Map();
   for (const line of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
-    const header = line.match(/^\s*\[([^\]]+)\]\s*(?:[;#].*)?$/);
-    if (header) {
-      section = header[1].trim().toLowerCase();
+    const header = ini.sectionHeader(line);
+    if (header !== null) {
+      section = header;
       sections.set(section, (sections.get(section) || 0) + 1);
-      // The reused helper expects plain headers; do not normalize a whole file.
-      if (line.trim().toLowerCase() !== `[${section}]`)
-        fail('AMBIGUOUS_INI', '目标 INI 节使用了不受支持的头部语法，请保留原文件');
       continue;
     }
     const entry = line.match(/^\s*([^;#][^=]*?)\s*=/);
@@ -116,9 +113,44 @@ function planOptiScalerSr(text, request) {
     warnings: ['OptiScaler 使用输出/输入倍率，不是把75直接写成倍率。',
       '保留原有 DRS、NR 和 FG 配置；实际渲染 R 仍需后端/游戏运行时确认。'] });
 }
+// JSON.parse validates syntax but discards duplicate object members. Reject
+// those before rewriting, including escaped aliases and nested unknown fields.
+function rejectDuplicateJsonKeys(text) {
+  let i = 0;
+  const ws = () => { while (/\s/.test(text[i] || '') && i < text.length) i++; };
+  function string() {
+    const start = i++;
+    while (i < text.length) {
+      if (text[i] === '\\') { i += 2; continue; }
+      if (text[i++] === '"') return JSON.parse(text.slice(start, i));
+    }
+  }
+  function value(depth) {
+    if (depth > 64) fail('INVALID_JSON_VALUE', '原配置嵌套过深，未生成重写内容');
+    ws();
+    if (text[i] === '"') { string(); return; }
+    if (text[i] === '{') {
+      i++; ws(); const seen = new Set();
+      if (text[i] === '}') { i++; return; }
+      for (;;) {
+        ws(); const key = string();
+        if (seen.has(key)) fail('DUPLICATE_JSON_KEY', '原配置包含重复成员名，保留原文件。');
+        seen.add(key); ws(); i++; value(depth + 1); ws();
+        if (text[i++] === '}') return;
+      }
+    }
+    if (text[i] === '[') {
+      i++; ws(); if (text[i] === ']') { i++; return; }
+      for (;;) { value(depth + 1); ws(); if (text[i++] === ']') return; }
+    }
+    while (i < text.length && !/[\s,}\]]/.test(text[i])) i++;
+  }
+  value(0);
+}
 function parseControl(text) {
   textInput(text); let value;
   try { value = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { fail('INVALID_JSON', '原 MFG 配置无法解析，不使用空对象覆盖'); }
+  rejectDuplicateJsonKeys(text.replace(/^\uFEFF/, ''));
   object(value, 'MFG配置');
   if (value.version !== 11) fail('PROTOCOL_MISMATCH', '仅适配已审阅的 MFG control v11，不改写未知协议');
   // JSON stringify must not silently turn an unknown infinity into null or
