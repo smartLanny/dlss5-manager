@@ -129,3 +129,17 @@ test('unknown JSON values and section syntax cannot be silently reinterpreted', 
     assert.throws(()=>p.planRtx40Mfg('{"version":11,"custom":'+raw+'}',{mode:'follow'}),isCode('INVALID_JSON_VALUE'));
   assert.throws(()=>p.planOptiScalerSr('[UpscaleRatio]\n[Other] ; comment\nUpscaleRatioOverrideValue=2\n',{quality:'quality'}),isCode('AMBIGUOUS_INI'));
 });
+
+
+test('ambiguous INI section boundaries cannot rewrite an unrelated section', () => {
+  const original = '[UpscaleRatio]\nUpscaleRatioOverrideEnabled=false\n[Other] trailing\nUpscaleRatioOverrideValue=77\n';
+  assert.throws(() => p.planOptiScalerSr(original, {quality:'performance'}), {code:'AMBIGUOUS_INI'});
+});
+
+test('duplicate control members cannot select a different protocol or hide debug values', () => {
+  for (const text of [
+    '{"version":12,"version":11,"generatedOnlyDebug":true,"generatedOnlyDebug":false}',
+    '{"version":11,"custom":{"x":1,"x":2}}',
+    '{"version":11,"custom":{"x":1,"\\u0078":2}}'
+  ]) assert.throws(() => p.planRtx40Mfg(text, {mode:'follow'}), {code:'DUPLICATE_JSON_KEY'});
+});
