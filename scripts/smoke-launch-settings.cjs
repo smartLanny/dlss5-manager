@@ -46,11 +46,14 @@ async function main() {
     page = await application.firstWindow(); page.setDefaultTimeout(45000); const pageErrors=[]; page.on('pageerror', e=>pageErrors.push(e.message));
     const idle = () => page.waitForFunction(()=>window.manager && document.body.getAttribute('aria-busy') !== 'true');
     const state = () => page.evaluate(async()=>(await window.manager.state()).value);
-    await idle(); await page.locator(`[data-detail="${gameId}"]`).first().click(); await page.locator('#srBackend').waitFor();
+    await idle(); assert.match(await page.locator(`[data-game-card="${gameId}"]`).innerText(),/API 待确认/);
+    await page.locator(`[data-game-card="${gameId}"] [data-game-action="install"]`).click();await idle();await page.locator('#srBackend').waitFor();
     assert.match(await page.locator('.detail-title .tag').innerText(), /API 待确认/);
     assert.equal(await page.locator('#gameApiChoice').inputValue(), 'auto');
     await page.locator('#gameApiChoice').selectOption('DX12'); await idle();
     assert.equal((await state()).games[0].apiPreference.api, 'DX12'); evidence.checks.push('API DX12 preference saved');
+    const dx11Exe=pe(0,false);dx11Exe.writeUInt32LE(0x1000,272);dx11Exe.writeUInt32LE(40,276);dx11Exe.writeUInt32LE(0x10bc,524);dx11Exe.write('d3d11.dll\0',700);await fs.writeFile(exe,dx11Exe);
+    await page.locator('[data-game-action="details"]').click();await idle();const details=await page.locator('#detailsContent').innerText();assert.match(details,/当前 API 选择：DX12/);assert.match(details,/EXE 静态线索：DX11/);await page.locator('[data-close="detailsDialog"]').click();evidence.checks.push('manual API is separate from conflicting static imports');
 
     await page.locator('#srQuality').selectOption('balanced'); await page.locator('[data-launch-save="sr"]').click(); await idle();
     assert.equal((await state()).games[0].launchSettings.requests.sr.request.quality, 'balanced');

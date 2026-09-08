@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { setup, consent } = require('./helpers.cjs');
 const { LaunchSettings } = require('../src/core/launch-settings.cjs');
+const { PlayerService } = require('../src/core/player.cjs');
 const policy = require('../src/core/launch-policy.cjs');
 const { DRS } = require('../src/core/launch-profile-plan.cjs');
 const clone = structuredClone;
@@ -141,4 +142,28 @@ test('official FG policy uses total minus one and never treats follow as off',()
   assert.throws(()=>policy.validateRequest('fg',{backend:'rtx40',mode:'off'}));
   assert.equal(policy.nativeFg({mode:'fixed',multiplier:6}).operations.find(o=>o.id===DRS.fgCount).value,5);
   assert.equal(policy.nativeFg({mode:'dynamic',targetFps:0}).operations.find(o=>o.id===DRS.fgTarget).value,0x01000000);
+});
+
+test('latent generated-only debug requires a manual preview before changing the FG route',async t=>{
+  const f=await fixture(t),original=JSON.stringify({version:11,followGame:true,mode:'follow',multiplier:2,generatedOnlyDebug:true});await fs.writeFile(f.file,original);
+  await f.settings.save(f.game.id,'fg',fixed(3));const outcomes=await f.settings.beforeLaunch(f.game.id);
+  assert.equal(outcomes[0].code,'SETTINGS_REVIEW_REQUIRED');assert.equal(await fs.readFile(f.file,'utf8'),original);assert.equal((await f.engine.history()).length,0);
+  const p=await f.settings.preview(f.game.id,'fg',fixed(3));assert.equal(p.requiresReview,true);await f.settings.apply(p.id,{confirm:true});assert.equal(JSON.parse(await fs.readFile(f.file,'utf8')).generatedOnlyDebug,true);
+  assert.equal((await f.settings.beforeLaunch(f.game.id))[0].unchanged,true);
+});
+
+test('observing another EXE cannot move a target that owns only SR or FG settings',async t=>{
+  const f=await fixture(t,{family:'RTX50'});await f.apply('sr',sr);assert.equal(f.game.installed,null);const originalExe=f.game.exe,other=path.join(f.gameRoot,'Other.exe');await fs.copyFile(originalExe,other);
+  const player=new PlayerService(f.engine,{running:async()=>[{exe:other,modules:['d3d12.dll']}]});await assert.rejects(player.observe(f.game.id),{code:'TARGET_CHANGED'});assert.equal(f.game.exe,originalExe);
+  player.deps.running=async()=>[{exe:process.platform==='win32'?originalExe.toUpperCase():originalExe,modules:['d3d12.dll']}];await player.observe(f.game.id);assert.equal(f.game.exe,originalExe);
+  await f.apply('sr',{backend:'native',quality:'game'});assert.equal(f.native.peek().profile,null);
+});
+
+test('recovery accepts a new inherited value after an uncertain successful delete, never a foreign explicit value',async t=>{
+  const f=await fixture(t,{family:'RTX50'}),initial=f.native.peek();initial.settings[DRS.srPreset]={kind:'inherited',value:11,location:1,predefined:false};f.native.set(initial);
+  await f.apply('sr',sr);const write=f.native.write.bind(f.native);let failOnce=true;
+  f.native.write=async(exe,expected,desired)=>{const result=await write(exe,expected,desired);if(desired.settings[DRS.srPreset].kind!=='explicit'){result.settings[DRS.srPreset]={kind:'inherited',value:12,location:1,predefined:false};f.native.set(result);if(failOnce){failOnce=false;throw Object.assign(new Error('lost readback'),{code:'NVAPI_READBACK_MISMATCH'});}}return result;};
+  await assert.rejects(f.apply('sr',{backend:'native',quality:'game'}),{code:'NVAPI_READBACK_MISMATCH'});assert.equal((await f.engine.pending()).length,0);assert.equal(f.native.peek().settings[DRS.srPreset].kind,'explicit');
+  await f.apply('sr',{backend:'native',quality:'game'});assert.equal(f.native.peek().settings[DRS.srPreset].value,12);assert.equal(f.native.peek().settings[DRS.srPreset].kind,'inherited');assert.equal(f.game.launchApplied.sr,undefined);
+  await f.apply('sr',sr);const changed=f.native.peek();changed.settings[DRS.srPreset]=explicit(99);f.native.set(changed);const j=(await f.engine.history()).find(j=>j.status==='committed');await assert.rejects(f.engine.recover(f.game.id,j.id),{code:'SETTINGS_EXTERNAL_CHANGE'});assert.equal(f.native.peek().settings[DRS.srPreset].value,99);
 });

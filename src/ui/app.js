@@ -25,7 +25,7 @@ function getPkg(id) { return state.packages.find(p => p.id === id); }
 function preferred(g, slot) { return getPkg(g.preferredPackages?.[slot]); }
 function gameStatus(g) {
   if (state.history.some(h => h.gameId === g.id && pending.has(h.status))) return { title:'需要恢复', action:'recover', button:'恢复游戏' };
-  if (!g.installed) return { title:'尚未安装', action:'install', button:'安装 DLSS5' };
+  if (!g.installed) return { title:g.exe && !g.api ? 'API 待确认' : '尚未安装', action:'install', button:'安装 DLSS5' };
   if (g.readiness === 'loader-unverified') return { title:'已部署 · 加载情况待验证', action:'detail', button:'查看安装状态' };
   if (g.readiness === 'runtime-missing') return { title:'文件已部署 · 运行组件待补齐', action:'detail', button:'查看安装状态' };
   return { title:`已安装 ${version(g.installed.version)}`, action:'launch', button:'启动游戏' };
@@ -165,7 +165,9 @@ async function applyPrepared() {
 }
 async function prepare(id, slot) {
   selectedGame = id; closeDialogs();
-  const p = await api('prepare', { gameId: id, ...(slot ? { slot } : {}) });
+  let p;
+  try { p = await api('prepare', { gameId: id, ...(slot ? { slot } : {}) }); }
+  catch (error) { if (error.code === 'NEEDS_IDENTIFICATION') { await refresh(); openDetail(id); toast(error.message); return; } throw error; }
   if (p.kind === 'need-package') { showPage('versions'); toast('先导入装机宅发布的插件成品；不用填写 API 或校验值。'); return; }
   plan = p; $('planTitle').textContent = p.noOp ? '检查当前版本' : slot ? `切换到 ${slot} 版本` : '安装 DLSS5';
   const blocked = p.kind === 'blocked' || p.blockers?.length;
@@ -181,7 +183,7 @@ async function prepare(id, slot) {
 }
 function syncConsent() { $('confirmApply').disabled = !plan?.id || !!plan.blockers?.length || [...$('planContent').querySelectorAll('.adopt-check')].some(c => !c.checked); }
 function reportDetails(r) {
-  $('detailsContent').innerHTML = `<p class="path">${esc(r.targetRoot)}</p><p>运行方式：${esc(r.exe?.apis?.join(' / ') || getGame()?.api || '待识别')} · ${esc(r.exe?.arch || '')}</p>${r.blockers.map(x => `<div class="notice danger">${esc(x)}</div>`).join('')}${(r.riskWarnings || []).map(x => `<p class="notice warning">${esc(x.message)}</p>`).join('')}${r.files.map(f => `<details class="file-detail"><summary>${esc(f.relative)} · ${esc(f.source)}</summary><p class="path">${esc(f.path)}</p><p>架构 ${esc(f.arch)} · 版本 ${esc(f.version)}</p><p>签名 ${esc(f.signature)} · ${esc(f.signer)}</p><p>归属 ${esc(f.ownership)} · ${esc(f.shared)}</p><p class="hash">SHA-256 ${esc(f.sha256)}</p><p>静态依赖：${esc(f.imports.join(', ') || '未取得')}</p></details>`).join('')}`;
+  $('detailsContent').innerHTML = `<p class="path">${esc(r.targetRoot)}</p><p>当前 API 选择：${esc(getGame()?.api || 'API 待确认')} · ${esc(r.exe?.arch || '')}</p><p>EXE 静态线索：${esc(r.exe?.apis?.join(' / ') || '未确定')}（不代表实际渲染 API）</p>${r.blockers.map(x => `<div class="notice danger">${esc(x)}</div>`).join('')}${(r.riskWarnings || []).map(x => `<p class="notice warning">${esc(x.message)}</p>`).join('')}${r.files.map(f => `<details class="file-detail"><summary>${esc(f.relative)} · ${esc(f.source)}</summary><p class="path">${esc(f.path)}</p><p>架构 ${esc(f.arch)} · 版本 ${esc(f.version)}</p><p>签名 ${esc(f.signature)} · ${esc(f.signer)}</p><p>归属 ${esc(f.ownership)} · ${esc(f.shared)}</p><p class="hash">SHA-256 ${esc(f.sha256)}</p><p>静态依赖：${esc(f.imports.join(', ') || '未取得')}</p></details>`).join('')}`;
   $('detailsDialog').showModal();
 }
 async function gameAction(action, id) {

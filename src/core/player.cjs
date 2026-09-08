@@ -57,13 +57,14 @@ class PlayerService {
     if (candidates.length !== 1) fail('API_AMBIGUOUS', '仍未唯一识别。请进入游戏主菜单再试；不需要猜选 DX11 或 DX12。');
     const found = candidates[0];
     const { inside } = require('./safety.cjs');
-    if (!inside(g.scanRoot, found.exe) || (g.installed && g.exe !== found.exe)) fail('TARGET_CHANGED', '检测到不同运行目录，请先恢复原安装记录。');
-    await noLinks(found.exe); g.exe = found.exe;
+    const sameExe=g.exe&&path.resolve(g.exe).toLowerCase()===path.resolve(found.exe).toLowerCase();
+    if (!inside(g.scanRoot, found.exe) || ((g.installed||Object.keys(g.launchApplied||{}).length) && !sameExe)) fail('TARGET_CHANGED', '检测到不同游戏程序，请先恢复原 EXE 的安装与启动设置。');
+    await noLinks(found.exe); if(!sameExe)g.exe = found.exe;
     if(g.apiPreference?.exe?.toLowerCase()===found.exe.toLowerCase()){
       await this.identify(id);return {message:`读取到 ${found.api} 模块线索，保留你指定的 ${g.api}；模块加载不等于实际渲染 API。`};
     }
     g.api = found.api;
-    g.apiEvidence = { api: found.api, candidates: [found.api], source: 'runtime-modules', confident: true, runtimeVerified:false, exe:found.exe, exeHash: await digestFile(found.exe), checkedAt: new Date().toISOString() };
+    g.apiEvidence = { api: found.api, candidates: [found.api], source: 'runtime-modules', confident: true, runtimeVerified:false, exe:g.exe, exeHash: await digestFile(found.exe), checkedAt: new Date().toISOString() };
     await this.engine.save(); return { message: '已识别，退出游戏后即可安装或换版本。' };
   }
   async prepare(id, packageId, slot, progress = () => {}) {

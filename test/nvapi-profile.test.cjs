@@ -77,6 +77,19 @@ test('a missing application profile can still report a global inherited zero', a
   assert.deepEqual(await adapter.read(EXE, [SR_OVERRIDE]), inheritedOnly);
 });
 
+test('restore returns the actual new inherited value and a retained owned profile', async () => {
+  const profile = { name: 'Owned', appName: EXE, exclusive: true, owned: true };
+  const expected = { profile, settings: settings([SR_OVERRIDE, explicit(1)]) };
+  const desired = { profile: null, settings: settings([SR_OVERRIDE, inherited(10)]) };
+  const actual = { profile, settings: settings([SR_OVERRIDE, inherited(20)]) };
+  const adapter = createNvapiProfileAdapter({ runner: async request => {
+    assert.deepEqual(request.expectedSnapshot, expected);
+    assert.deepEqual(request.desiredSnapshot, desired);
+    return { ok: true, snapshot: actual };
+  } });
+  assert.deepEqual(await adapter.write(EXE, expected, desired), actual);
+});
+
 test('native errors and malformed success responses can never become successful writes', async () => {
   const one = { profile: null, settings: settings([SR_OVERRIDE, absent()]) };
   const unavailable = createNvapiProfileAdapter({ runner: async () => ({ ok: false, code: 'NVAPI_UNAVAILABLE', error: 'no driver' }) });
@@ -87,7 +100,7 @@ test('native errors and malformed success responses can never become successful 
   await assert.rejects(fake.write(EXE, one, one), e => e.code === 'INVALID_SNAPSHOT');
 });
 
-test('PowerShell bridge compiles the pinned NVAPI interop layouts without loading a profile', { skip: process.platform !== 'win32' }, () => {
+test('PowerShell bridge validates restore predicates and pinned layouts without loading a profile', { skip: process.platform !== 'win32' }, () => {
   const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const script = path.join(__dirname, '..', 'src', 'native', 'nvapi-profile.ps1');
   const output = execFileSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',

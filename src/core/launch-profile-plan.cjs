@@ -211,6 +211,6 @@ function planRtx40Mfg(text, request, status = null, now = Date.now()) {
   }
   const content = (text.startsWith('\uFEFF') ? '\uFEFF' : '') + JSON.stringify(next, null, 2).replace(/\n/g, text.includes('\r\n') ? '\r\n' : '\n') + (text.includes('\r\n') ? '\r\n' : '\n');
   return plan('rtx40', { domain: 'fg', destination: 'RTX40MFG-Universal.json', beforeSha256: hash(text), afterSha256: hash(content),
-    content, feasibility, evidence, warnings, automaticApplicationAllowed: false });
+    content, feasibility, evidence, warnings, requiresReview: original.generatedOnlyDebug === true, automaticApplicationAllowed: false });
 }
 module.exports = { SOURCES, DRS, planNvidiaSr, planOptiScalerSr, planRtx40Mfg, reviewMfgStatus };

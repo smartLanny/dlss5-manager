@@ -10,6 +10,9 @@ const clone=x=>structuredClone(x);
 const DRIVER_IDS=[...policy.IDS.sr,...policy.IDS.fg];
 const envCheck=env=>{if(!env.verified)fail('PROCESS_UNKNOWN','进程检查失败，无法确认游戏已退出。请求可以保存，但暂不应用。');if(env.running.length)fail('GAME_RUNNING','游戏仍在运行；请求已保留，请退出游戏后应用。');};
 function subset(snapshot,ids){return Object.fromEntries(ids.map(id=>[id,snapshot.settings[id]]));}
+// Restoring inheritance means removing our app override, not freezing an older
+// global value. Explicit application values always require exact ownership.
+function sameOwnedStates(actual,expected,ids){return ids.every(id=>expected.settings[id].kind==='explicit'?policy.same(actual.settings[id],expected.settings[id]):actual.settings[id].kind!=='explicit');}
 function defaultRequest(domain,backend){return domain==='sr'?{backend,quality:'game'}:{backend,mode:'restore'};}
 class LaunchSettings {
   constructor(engine,dependencies={}){this.engine=engine;engine.launchSettings=this;this.driver=dependencies.driver;this.hardware=dependencies.hardware||require('./platform.cjs').hardware;this.deps=dependencies;}
@@ -60,7 +63,7 @@ class LaunchSettings {
       if(old&&!policy.same(Object.fromEntries(Object.keys(old.lastValues).map(k=>[k,currentValues[k]])),old.lastValues))fail('SETTINGS_EXTERNAL_CHANGE','本工具接管的配置键已被外部修改，请先检查。');
       let content,originalRef=old?.baseline||null;
       if(restoring){const original=await this.backupText(originalRef);content=policy.hash(before)===old.lastHash?original:policy.restoreText(before,original,old.lastValues,backend);}
-      else {const result=policy.compileFile(before,r);content=result.content;warnings.push(...result.warnings);}
+      else {const result=policy.compileFile(before,r);content=result.content;p.requiresReview=result.requiresReview===true;warnings.push(...result.warnings);}
       const afterValues=policy.values(content,backend),keys=Object.keys(afterValues).filter(k=>!policy.same(currentValues[k],afterValues[k]));
       const ownedKeys=[...new Set([...Object.keys(old?.lastValues||{}),...keys])];
       p.changes=[{name,role:'launch-config',backend,before:policy.hash(before),after:policy.hash(content),content,keys,afterValues:Object.fromEntries(keys.map(k=>[k,afterValues[k]])),allAfterValues:Object.fromEntries(ownedKeys.map(k=>[k,afterValues[k]])),baseline:originalRef}];
@@ -70,12 +73,13 @@ class LaunchSettings {
     if(env.antiCheat?.length)warnings.push('检测到反作弊服务；这里不绕过游戏策略，也不修改或注入运行中的游戏。');
     e.plans.set(p.id,p);return this.publicPlan(p);
   }
-  publicPlan(p){return {id:p.id,kind:p.kind,gameId:p.gameId,domain:p.domain,backend:p.backend,request:p.request,blockers:p.blockers,warnings:p.warnings,noOp:p.noOp,changes:p.changes.map(c=>({name:c.name,before:c.before,after:c.after})),driverSettings:p.driver?.ids||[],phase:'preview',applied:false,runtimeVerified:false};}
+  publicPlan(p){return {id:p.id,kind:p.kind,gameId:p.gameId,domain:p.domain,backend:p.backend,request:p.request,blockers:p.blockers,warnings:p.warnings,requiresReview:p.requiresReview===true,noOp:p.noOp,changes:p.changes.map(c=>({name:c.name,before:c.before,after:c.after})),driverSettings:p.driver?.ids||[],phase:'preview',applied:false,runtimeVerified:false};}
   async backupText(ref){if(!ref||!HASH.test(ref.hash||''))fail('BACKUP_INVALID','配置原件记录损坏。');const file=this.engine.backupPath(ref);if(await digestFile(file)!==ref.hash)fail('BACKUP_DAMAGED','配置原件备份损坏，保留现状。');return policy.readText(file);}
   async apply(planId,consent={}){return this.engine.serialize(async()=>{
     const e=this.engine;validId(planId);const p=e.plans.get(planId);e.plans.delete(planId);
     if(!p||p.kind!=='launch-settings'||p.expires<Date.now())fail('PLAN_EXPIRED','配置预览已过期，请重新预览。');
     if(consent.confirm!==true)fail('CONFIRM_REQUIRED','请确认本次配置变更和实际生效边界。');
+    if(consent.automatic===true&&p.requiresReview&&!p.noOp)fail('SETTINGS_REVIEW_REQUIRED','现有配置启用了仅生成帧调试输出。请先手动预览并确认本次变化；不会在启动时自动激活。');
     if(p.blockers.length)fail('SETTINGS_BLOCKED',p.blockers.join('\n'));
     const g=e.game(p.gameId);if(p.fingerprint!==JSON.stringify({exe:g.exe,installed:g.installed||null,applied:g.launchApplied||{}}))fail('PLAN_CHANGED','游戏或配置记录已改变，请重新预览。');
     await assertGameRoot(p.root,e.root);envCheck(await e.deps.environment(p.root,p.exe));
@@ -127,12 +131,12 @@ class LaunchSettings {
     }
     let driverCurrent,driverDesired;
     if(j.driver){driverCurrent=await this.nvapi().read(j.exe,DRIVER_IDS);driverDesired=clone(driverCurrent);const ids=j.driver.ids;
-      if(!policy.same(subset(driverCurrent,ids),subset(j.driver.before,ids))&&!policy.same(subset(driverCurrent,ids),subset(j.driver.after,ids)))fail('SETTINGS_EXTERNAL_CHANGE','驱动设置已被外部修改，保留待恢复记录。');
+      if(!sameOwnedStates(driverCurrent,j.driver.before,ids)&&!sameOwnedStates(driverCurrent,j.driver.after,ids))fail('SETTINGS_EXTERNAL_CHANGE','驱动设置已被外部修改，保留待恢复记录。');
       for(const id of ids)driverDesired.settings[id]=clone(j.driver.before.settings[id]);driverDesired.profile=clone(j.driver.before.profile);
       if(driverDesired.profile===null&&Object.values(driverDesired.settings).some(s=>s.kind==='explicit'))driverDesired.profile=clone(driverCurrent.profile);
     }
     j.status='restoring';await atomicJson(e.journalPath(j.id),j);
-    if(j.driver&&!policy.same(driverCurrent,driverDesired))await this.nvapi().write(j.exe,driverCurrent,driverDesired);
+    if(j.driver){j.restoredDriver=!policy.same(driverCurrent,driverDesired)?await this.nvapi().write(j.exe,driverCurrent,driverDesired):driverCurrent;await atomicJson(e.journalPath(j.id),j);}
     for(let i=staged.length-1;i>=0;i--){const row=staged[i];if(await digestFile(row.target)!==row.expected)fail('FILE_CHANGED','恢复过程中配置变化。');const temp=e.stagePath(j,i,true),existing=await digestFile(temp),wanted=policy.hash(row.text);if(existing&&existing!==wanted)fail('STAGE_CHANGED','恢复临时文件已改变，保留待恢复记录。');if(!existing)await durableWrite(temp,row.text,true);await noLinks(row.target);if(await digestFile(row.target)!==row.expected)fail('FILE_CHANGED','恢复写入前配置变化。');await fs.rename(temp,row.target);if(await digestFile(row.target)!==wanted)fail('WRITE_VERIFY_FAILED','恢复读回失败。');}
     g.launchApplied=clone(j.beforeLaunch||{});g.launchDriverOriginalProfile=clone(j.beforeDriverOriginal);
     g.launchRequests=keepRequest?clone(j.beforeRequests||{}):{...(g.launchRequests||{}),[j.domain]:{exe:j.exe,request:clone(g.launchApplied[j.domain]?.request||defaultRequest(j.domain,j.backend)),savedAt:new Date().toISOString()}};
@@ -143,7 +147,7 @@ class LaunchSettings {
     const g=this.engine.game(gameId),outcomes=[];
     for(const [domain,row] of Object.entries(g.launchRequests||{})){
       if(row.exe!==g.exe){outcomes.push({domain,applied:false,reason:'EXE 已改变，请重新保存请求。'});continue;}
-      try{const p=await this.preview(gameId,domain,row.request);const result=await this.apply(p.id,{confirm:true});outcomes.push({domain,...result});}
+      try{const p=await this.preview(gameId,domain,row.request);const result=await this.apply(p.id,{confirm:true,automatic:true});outcomes.push({domain,...result});}
       catch(error){outcomes.push({domain,applied:false,code:error.code,reason:error.message});}
     }
     return outcomes;
