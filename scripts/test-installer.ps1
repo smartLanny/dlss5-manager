@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $setup = Get-ChildItem -LiteralPath 'dist' -Filter '*-Setup.exe' | Select-Object -First 1
 if (-not $setup) { throw 'Setup EXE missing.' }
 $installDir = Join-Path (Get-Location) 'test-results\nsis-installed'
-$p = Start-Process -FilePath $setup.FullName -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+$p = Start-Process -FilePath $setup.FullName -ArgumentList @('/S', "/D=$installDir") -WindowStyle Hidden -Wait -PassThru
 if ($p.ExitCode -ne 0) { throw "Setup failed: $($p.ExitCode)" }
 $exe = Join-Path $installDir 'Zhuangjizhai-DLSS5-Manager.exe'
 if (-not (Test-Path -LiteralPath $exe)) { throw 'Setup did not install to the explicitly requested directory.' }
@@ -13,7 +13,7 @@ $evidence = Get-Content -LiteralPath 'test-results/install-evidence.json' -Raw |
 if (-not (Test-Path -LiteralPath $evidence.sentinel)) { throw 'Recovery-data sentinel missing before uninstall.' }
 $uninstaller = Get-ChildItem -LiteralPath $installDir -Filter 'Uninstall*.exe' | Select-Object -First 1
 if (-not $uninstaller) { throw 'Per-user uninstaller missing.' }
-$u = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+$u = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -WindowStyle Hidden -Wait -PassThru
 if ($u.ExitCode -ne 0) { throw "Uninstaller failed: $($u.ExitCode)" }
 for ($i=0; $i -lt 40 -and (Test-Path -LiteralPath $exe); $i++) { Start-Sleep -Milliseconds 250 }
 if (Test-Path -LiteralPath $exe) { throw 'Installed EXE remains after uninstall.' }

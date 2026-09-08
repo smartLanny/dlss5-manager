@@ -80,21 +80,36 @@ async function environment(root, exe, diagnostic) {
   if (process.platform !== 'win32') return { verified: false, running: [], antiCheat: [], reason: '仅 Windows 版本支持实际安装。' };
   try {
     const value = await powershell(`
-      $gameProcesses=@(); $ac=@();
+      $rows=@(); $ac=@();
       foreach($p in @(Get-Process -ErrorAction Stop)) {
         if($p.ProcessName -match $q.ac){$ac+=$p.ProcessName}
         $pp=$null; try{$pp=$p.Path}catch{}
-        if($p.ProcessName -eq $q.stem -or ($pp -and $pp.StartsWith($q.prefix,[StringComparison]::OrdinalIgnoreCase))){$gameProcesses+=$p.ProcessName}
+        if($p.Id -ne $PID){$rows+=@{id=$p.Id;name=$p.ProcessName;path=$pp}}
       }
       foreach($s in @(Get-Service -ErrorAction Stop)){if(($s.Name+' '+$s.DisplayName) -match $q.ac -and $s.Status -eq 'Running'){$ac+=$s.Name}}
-      @{verified=$true;running=@($gameProcesses|Select-Object -Unique);antiCheat=@($ac|Select-Object -Unique)}|ConvertTo-Json -Compress
-    `, { stem: path.basename(exe, path.extname(exe)), prefix: root + path.sep, ac: AC.source });
-    return value;
+      @{rows=@($rows);antiCheat=@($ac|Select-Object -Unique)}|ConvertTo-Json -Compress -Depth 4
+    `, { ac: AC.source });
+    return {...classifyProcesses(value.rows,root,exe,{pid:process.pid,exe:process.execPath}),antiCheat:value.antiCheat};
   } catch (e) {
     // Optional test-only observation of a failed native probe; never exposed to renderer IPC.
     if (typeof diagnostic === 'function') diagnostic(e);
     return { verified: false, running: [], antiCheat: [], reason: '进程或服务检查失败，不能确认游戏已退出。' };
   }
+}
+function classifyProcesses(rows,root,exe,self={}) {
+  if(!Array.isArray(rows))return {verified:false,running:[],reason:'进程列表无效，无法确认游戏已退出。'};
+  const normalize=p=>path.win32.resolve(p).toLowerCase(),prefix=normalize(root).replace(/[\\/]$/,'')+'\\',target=normalize(exe);
+  const stem=path.win32.basename(target,'.exe'),selfExe=self.exe?normalize(self.exe):null,running=[],unknown=[];
+  for(const row of rows){
+    if(row.id===self.pid)continue;
+    const name=String(row.name||''),processPath=typeof row.path==='string'&&row.path?normalize(row.path):null;
+    if(selfExe&&processPath===selfExe)continue;
+    // A same-named executable elsewhere is not this game. A relevant process
+    // whose path cannot be read remains unknown, rather than a fabricated hit.
+    if(processPath){if(processPath===target||processPath.startsWith(prefix))running.push(name);}
+    else if(name.toLowerCase()===stem)unknown.push(name);
+  }
+  return {verified:unknown.length===0,running:[...new Set(running)],unknown:[...new Set(unknown)],...(unknown.length?{reason:'同名进程路径无法读取，不能确认是不是当前游戏。'}:{})};
 }
 async function metadata(files) {
   if (!files.length || process.platform !== 'win32') return {};
@@ -141,4 +156,16 @@ async function runningGame(root) {
   `, { prefix: path.resolve(root) + path.sep });
   return (Array.isArray(rows) ? rows : []).filter(x => x && typeof x.exe === 'string' && Array.isArray(x.modules));
 }
-module.exports = { AC, PROXIES, APIS, peInfo, environment, metadata, checkLocks, steamRoots, runningGame };
+let hardwareCache=null;
+async function hardware() {
+  if(hardwareCache&&Date.now()-hardwareCache.at<10000)return hardwareCache.value;
+  let names=[];
+  if(process.platform==='win32')try{
+    const result=await powershell("ConvertTo-Json -InputObject @(Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object {$_.Name}) -Compress");
+    names=(Array.isArray(result)?result:[]).filter(n=>typeof n==='string');
+  }catch{}
+  const families=[...new Set(names.map(n=>n.match(/RTX\s*(20|30|40|50)\d{2}/i)?.[1]).filter(Boolean))];
+  const value={names,family:families.length===1?'RTX'+families[0]:families.length>1?'mixed':'unknown',activeGameAdapterVerified:false};
+  hardwareCache={at:Date.now(),value};return value;
+}
+module.exports = { hardware, AC, PROXIES, APIS, peInfo, environment, classifyProcesses, metadata, checkLocks, steamRoots, runningGame };

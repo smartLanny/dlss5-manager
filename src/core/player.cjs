@@ -31,6 +31,21 @@ class PlayerService {
     await this.engine.save(); return { imported, provided: catalog.packages.length };
   }
   async identify(id) { const g = this.engine.game(id); const result = await this.deps.detect(g, this.engine.root); await this.engine.save(); return result; }
+  async setApi(id,api) {
+    return this.engine.serialize(async()=>{
+      const g=this.engine.game(id);
+      if(!['auto',...Object.values(API_DLL)].includes(api))fail('API_INVALID','请选择有效的游戏图形 API。');
+      const {inside}=require('./safety.cjs');
+      if(!g.exe||!inside(g.scanRoot,g.exe))fail('EXE_REQUIRED','先选择真正运行的游戏 EXE。');
+      const info=await peInfo(g.exe);
+      if(!info.valid||info.dll||info.arch!=='x64'||require('./discovery.cjs').AUXILIARY.test(path.basename(g.exe)))fail('EXE_INVALID','请选择 Windows x64 游戏程序。');
+      await this.engine.ensureSettingsState();
+      const previous=structuredClone({api:g.api,apiPreference:g.apiPreference,apiEvidence:g.apiEvidence});
+      g.apiPreference=api==='auto'?null:{exe:g.exe,api};g.apiEvidence=null;
+      try{const result=await this.deps.detect(g,this.engine.root);await this.engine.save();return result;}
+      catch(error){Object.assign(g,previous);throw error;}
+    });
+  }
   async observe(id) {
     const g = this.engine.game(id), rows = await this.deps.running(g.scanRoot);
     const candidates = [];
@@ -43,14 +58,18 @@ class PlayerService {
     const found = candidates[0];
     const { inside } = require('./safety.cjs');
     if (!inside(g.scanRoot, found.exe) || (g.installed && g.exe !== found.exe)) fail('TARGET_CHANGED', '检测到不同运行目录，请先恢复原安装记录。');
-    await noLinks(found.exe); g.exe = found.exe; g.api = found.api;
-    g.apiEvidence = { api: found.api, candidates: [found.api], source: 'runtime-modules', confident: true, exeHash: await digestFile(found.exe), checkedAt: new Date().toISOString() };
+    await noLinks(found.exe); g.exe = found.exe;
+    if(g.apiPreference?.exe?.toLowerCase()===found.exe.toLowerCase()){
+      await this.identify(id);return {message:`读取到 ${found.api} 模块线索，保留你指定的 ${g.api}；模块加载不等于实际渲染 API。`};
+    }
+    g.api = found.api;
+    g.apiEvidence = { api: found.api, candidates: [found.api], source: 'runtime-modules', confident: true, runtimeVerified:false, exe:found.exe, exeHash: await digestFile(found.exe), checkedAt: new Date().toISOString() };
     await this.engine.save(); return { message: '已识别，退出游戏后即可安装或换版本。' };
   }
   async prepare(id, packageId, slot, progress = () => {}) {
     const e = this.engine, g = e.game(id);
     progress('正在识别游戏'); await this.identify(id);
-    if (!g.exe || !g.api) fail('NEEDS_IDENTIFICATION', '请先启动一次游戏，然后点击“识别运行中的游戏”。无需选择图形 API。');
+    if (!g.exe || !g.api) fail('NEEDS_IDENTIFICATION', 'API 待确认。先选择真正运行的 EXE，再指定游戏图形 API，或启动游戏后读取模块线索。');
     const pkg = packageId ? e.package(packageId) : this.preferred(g, slot);
     if (!pkg) return { kind: 'need-package' };
     progress('正在检查游戏文件'); const report = await e.deps.scan(g, e.root);

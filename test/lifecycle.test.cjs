@@ -31,9 +31,9 @@ async function managedHost(t) {
 test('uninstall inspection does not require an existing x64 EXE or a chosen API', async t => {
   const { engine, game } = await setup(t); await fs.unlink(game.exe); game.api = '';
   const un = await scanGame(game, engine.root, { purpose: 'uninstall' });
-  assert.ok(!un.blockers.some(x => /x64|运行方式|启动器/.test(x)));
+  assert.ok(!un.blockers.some(x => /x64|API 待确认|启动器/.test(x)));
   const install = await scanGame(game, engine.root);
-  assert.ok(install.blockers.some(x => /x64/.test(x))); assert.ok(install.blockers.some(x => /运行方式/.test(x)));
+  assert.ok(install.blockers.some(x => /x64/.test(x))); assert.ok(install.blockers.some(x => /API 待确认/.test(x)));
 });
 test('uninstall uses its inspection purpose at preview and apply, even if EXE vanishes after preview', async t => {
   const { engine, game, gameRoot, add } = await setup(t); const pkg = await add('0.3.3.4');

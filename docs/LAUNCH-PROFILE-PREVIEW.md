@@ -1,5 +1,7 @@
 # 启动前 SR / MFG 配置预览实验
 
+此文记录 PR #21 的纯编译器边界。后续 Manager 0.3.0-beta.1 已新增独立的事务、NVAPI adapter 和 UI 接入，见 [每游戏启动设置与恢复](LAUNCH-SETTINGS.md)。下述“未实现 writer”仅描述该编译器增量，不是当前整合候选的全部能力；CLI 仍然只读。
+
 对应 Manager #18（SR）与 #19（FG/MFG）；HDR 组件另见 #20。
 
 ## 实际交付边界

@@ -1,0 +1,16 @@
+.api-choice,.launch-box{margin-top:18px;border:1px solid #344b57;border-radius:12px;background:#15222a;padding:17px 19px}
+.api-choice{display:flex;align-items:end;gap:18px}
+.api-choice label{min-width:220px;font-size:11px;color:#aec2cd}
+.api-choice p{margin:0 0 4px;color:#829aa7;font-size:11px;line-height:1.7}
+.launch-box>.muted{margin:8px 0 2px}
+.launch-domain{border-top:1px solid #30434e;margin-top:16px;padding-top:16px}
+.launch-domain-title{display:flex;justify-content:space-between;align-items:center;gap:15px}
+.launch-domain-title strong,.launch-domain-title small{display:block}
+.launch-domain-title small{margin-top:5px;color:#839ca9;font-size:10px}
+.launch-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:13px 0}
+.launch-grid label{font-size:10px;color:#9fb5c1}
+.launch-grid select,.api-choice select{width:100%;background:#111d25;border:1px solid #415562;border-radius:8px;padding:9px 11px;color:#ddeaf2;display:block;margin-top:6px}
+.launch-domain .button-row{justify-content:flex-end}
+.launch-domain .check-row{margin:8px 0}
+.launch-domain #fgModeNote{min-height:34px;line-height:1.6}
+@media(max-width:760px){.launch-grid{grid-template-columns:1fr}.api-choice{display:block}.api-choice p{margin-top:10px}}

@@ -19,7 +19,7 @@ function importPE(name,dll=false) { const b=pe(0,dll);b.writeUInt32LE(0x1000,272
 
 test('automatic recognition uses one API; multiple APIs remain unresolved rather than guessed',async t=>{
  const root=await temp(t),file=path.join(root,'Game.exe');
- for(const [marker,api] of [['D3D12CreateDevice','DX12'],['D3D11CreateDevice','DX11'],['vkCreateInstance','Vulkan'],['wglCreateContext','OpenGL']]){
+ for(const [marker,api] of [['D3D12CreateDevice','DX12'],['vkCreateInstance','Vulkan'],['wglCreateContext','OpenGL']]){
   await fs.writeFile(file,apiPE(marker));const r=await detectExecutable(file,root);assert.equal(r.api,api);assert.ok(r.confident);assert.equal(r.source,'entry-point-markers');
  }
  const b=apiPE('D3D12CreateDevice');Buffer.from('vkCreateInstance').copy(b,650);await fs.writeFile(file,b);
@@ -37,7 +37,7 @@ test('automatic identification excludes helper executables, x86 and changed runt
  await detectGame(game,engine.root);assert.equal(game.api,'DX12');
  game.api='Vulkan';game.apiEvidence={source:'runtime-modules',api:'Vulkan',exeHash:await digestFile(game.exe)};
  await detectGame(game,engine.root);assert.equal(game.api,'Vulkan');
- await fs.writeFile(game.exe,apiPE('D3D11CreateDevice'));await detectGame(game,engine.root);assert.equal(game.api,'DX11');
+ await fs.writeFile(game.exe,apiPE('D3D11CreateDevice'));await detectGame(game,engine.root);assert.equal(game.api,'');assert.deepEqual(game.apiEvidence.candidates,['DX11']);
  const helper=path.join(gameRoot,'CrashReporter.exe');await fs.writeFile(helper,apiPE('D3D12CreateDevice'));assert.equal((await detectExecutable(helper,gameRoot)).confident,false);
  await fs.writeFile(game.exe,pe(0,false,false));assert.equal((await detectExecutable(game.exe,gameRoot)).confident,false);
 });

@@ -8,13 +8,17 @@ function bundle(v,seed){const addon=pe(seed),runtime=pe(7);return writeZip([['ma
 async function main(){
  await fs.mkdir('test-results',{recursive:true});await fs.mkdir('output',{recursive:true});
  const root=await fs.realpath(await fs.mkdtemp(path.resolve('test-results/player-ui-'))),gameRoot=path.join(root,'synthetic-game'),userdata=path.join(root,'userdata');await fs.mkdir(gameRoot);
+ const bootstrap=path.join(root,'ui-bootstrap.cjs');
+ // Keep local Steam/Epic libraries out of screenshots and fixture selection.
+ // EXE detection, IPC, scanner, file transactions and recovery remain real.
+ await fs.writeFile(bootstrap,`require(${JSON.stringify(path.resolve('src/core/discovery.cjs'))}).discoverSteam=async()=>({games:[],notes:[]});\nrequire(${JSON.stringify(path.resolve('src/core/stores.cjs'))}).discoverEpic=async()=>[];\nrequire(${JSON.stringify(path.resolve('src/main.cjs'))});\n`);
  const exe=path.join(gameRoot,'DemoGame.exe'),aFile=path.join(root,'0.3.3.4.dlss5pkg'),bFile=path.join(root,'0.4.1beta.dlss5pkg');
  const exeData=pe(0,false);Buffer.from('D3D12CreateDevice').copy(exeData,550);await fs.writeFile(exe,exeData);await fs.writeFile(aFile,bundle('0.3.3.4',1));await fs.writeFile(bFile,bundle('0.4.1beta',2));
  const settings=Buffer.from('[GENERAL]\nKeepMySettings=1\n');await fs.writeFile(path.join(gameRoot,'ReShade.ini'),settings);
  if(process.platform==='win32')await ensureReShade(path.join(userdata,'manager-data'));
  let application, page;
  try{
-  application=await _electron.launch({args:[path.resolve('.')],env:{...process.env,DLSS5_TEST_USER_DATA:userdata},timeout:60000,chromiumSandbox:true});
+  application=await _electron.launch({args:[bootstrap],env:{...process.env,DLSS5_TEST_USER_DATA:userdata},timeout:60000,chromiumSandbox:true});
   page=await application.firstWindow();page.setDefaultTimeout(90000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const idle=()=>page.waitForFunction(()=>window.manager&&document.body.getAttribute('aria-busy')!=='true');await idle();
   assert.equal(await page.title(),'装机宅 DLSS5');assert.equal(await page.evaluate(()=>typeof window.require),'undefined');
@@ -63,7 +67,7 @@ async function main(){
   const feedbackContents=readZip(await fs.readFile(feedbackZip));
   assert.deepEqual(feedbackContents.get('runtime-feedback-1.zip').bytes,await fs.readFile(coreZip));
   assert.deepEqual(feedbackContents.get('runtime-feedback-2.zip').bytes,await fs.readFile(imageZip));
-  assert.ok((await page.locator('#feedbackReport').innerText()).includes('0.2.0-beta.3'));await page.screenshot({path:'output/ui-feedback.png'});
+  assert.ok((await page.locator('#feedbackReport').innerText()).includes(require('../package.json').version));await page.screenshot({path:'output/ui-feedback.png'});
   await application.evaluate(({shell,clipboard})=>{shell.openExternal=async url=>{globalThis.__opened=url;};clipboard.writeText=text=>{globalThis.__copied=text;};});
   await page.locator('#feedbackOpen').click();await idle();const opened=await application.evaluate(()=>globalThis.__opened);assert.ok(opened.startsWith('https://github.com/smartLanny/dlss5-manager/issues/new?title='));assert.ok(!opened.includes('body='));
   const copied=await application.evaluate(()=>globalThis.__copied);assert.ok(!copied.includes(root));await page.locator('[data-close="feedbackDialog"]').click();
@@ -101,7 +105,7 @@ async function main(){
   const art=await application.evaluate(async({nativeImage},ids)=>{const out={};for(const id of ids){try{const r=await fetch(`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${id}/library_600x900.jpg`,{signal:AbortSignal.timeout(6000)});if(!r.ok)continue;const b=Buffer.from(await r.arrayBuffer());if(b.length>8000000)continue;const im=nativeImage.createFromBuffer(b);if(!im.isEmpty())out[id]=im.resize({width:300}).toDataURL();}catch{}}return out;},demo.map(g=>g.steamId));
   await page.evaluate(({demo,art})=>{for(const g of demo){const im=document.querySelector(`[data-game-card="${g.id}"] img`);if(art[g.steamId]){im.src=art[g.steamId];im.hidden=false;}}},{demo,art});
   await page.waitForTimeout(800);await page.screenshot({path:'output/ui-home.png'});
-  console.log('PLAYER UI PASSED: no API/hash form, automatic EXE/API, multi-version import, real pinned ReShade plus synthetic addon/runtime transaction, A/B/A, repeated install no-op, original settings preserved, missing-EXE uninstall preserves shared loader/runtime, undo uninstall, clean-host cleanup, two feedback ZIPs and pasted summary, Bilibili. All game files synthetic; no game executable was launched.');
+  console.log('PLAYER UI PASSED: no raw API/hash text forms, automatic EXE/API, multi-version import, real pinned ReShade plus synthetic addon/runtime transaction, A/B/A, repeated install no-op, original settings preserved, missing-EXE uninstall preserves shared loader/runtime, undo uninstall, clean-host cleanup, two feedback ZIPs and pasted summary, Bilibili. All game files synthetic; no game executable was launched.');
  }catch(e){try{if(page)await page.screenshot({path:'output/ui-failure.png'});}catch{}throw e;}finally{if(application)await application.close();await fs.rm(root,{recursive:true,force:true});}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

@@ -41,7 +41,7 @@ class Engine {
     await noLinks(this.root);
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
     this.state = await readJson(this.stateFile, { schema: 1, games: [], packages: [] });
-    if (![1, 2, 3, 4].includes(this.state.schema) || !Array.isArray(this.state.games) || !Array.isArray(this.state.packages) || this.state.games.length > 2000 || this.state.packages.length > 1000) fail('STATE_INVALID', '本地管理记录无法读取，未修改任何游戏文件。');
+    if (![1, 2, 3, 4, 5].includes(this.state.schema) || !Array.isArray(this.state.games) || !Array.isArray(this.state.packages) || this.state.games.length > 2000 || this.state.packages.length > 1000) fail('STATE_INVALID', '本地管理记录无法读取，未修改任何游戏文件。');
     for (const g of this.state.games) { validId(g.id); if (typeof g.scanRoot !== 'string') fail('STATE_INVALID', '游戏记录已损坏。'); }
     for (const p of this.state.packages) { validId(p.id); validateManifest(p.manifest); componentForPackage(p); }
     return this;
@@ -66,7 +66,7 @@ class Engine {
     await atomicJson(this.stateFile, this.state);
   }
   async ensureLifecycleState() {
-    if (this.state.schema === 4) return;
+    if (this.state.schema >= 4) return;
     // Older managers ignore retained dependency receipts. Persist their refusal
     // boundary BEFORE any new transaction can change a game file or ownership.
     const previous = await readJson(this.stateFile, { schema: 1, games: [], packages: [] });
@@ -75,6 +75,13 @@ class Engine {
     await durableWrite(path.join(folder, `state-before-lifecycle-${crypto.randomUUID()}.json`), JSON.stringify(previous, null, 2), true);
     await atomicJson(this.stateFile, { ...this.state, schema: 4 });
     this.state.schema = 4;
+  }
+  async ensureSettingsState() {
+    if(this.state.schema>=5)return;
+    await this.ensureLifecycleState();
+    const folder=path.join(this.root,'metadata-backups');await noLinks(folder);await fs.mkdir(folder,{recursive:true});
+    await durableWrite(path.join(folder,`state-before-settings-${crypto.randomUUID()}.json`),JSON.stringify(this.state,null,2),true);
+    await atomicJson(this.stateFile,{...this.state,schema:5});this.state.schema=5;
   }
   game(id) { validId(id); const g = this.state.games.find(g => g.id === id); if (!g) fail('GAME_MISSING', '游戏记录不存在，请重新添加。'); return g; }
   package(id) { validId(id); const p = this.state.packages.find(p => p.id === id); if (!p) fail('PACKAGE_MISSING', '请先导入对应版本的 addon。'); validateManifest(p.manifest); componentForPackage(p); return p; }
@@ -111,7 +118,7 @@ class Engine {
   }
   async checkOwnership(game, root) {
     const all = await this.history();
-    const other = this.state.games.find(g => g.id !== game.id && g.exe && path.resolve(path.dirname(g.exe)).toLowerCase() === root.toLowerCase() && (g.installed || all.some(j => j.gameId === g.id && !['committed', 'reverted', 'aborted'].includes(j.status))));
+    const other = this.state.games.find(g => g.id !== game.id && g.exe && path.resolve(path.dirname(g.exe)).toLowerCase() === root.toLowerCase() && (g.installed || Object.keys(g.launchApplied||{}).length || all.some(j => j.gameId === g.id && !['committed', 'reverted', 'aborted'].includes(j.status))));
     if (other) fail('TARGET_ALREADY_MANAGED', '同一运行目录已由另一条游戏记录管理，请使用原记录更新或恢复，避免污染原始备份。');
     const latest = all.find(j => j.gameId === game.id && j.status === 'committed');
     if (JSON.stringify(game.installed || null) !== JSON.stringify(latest?.afterInstalled || null)) fail('OWNERSHIP_UNVERIFIED', '文件归属记录与已提交事务不一致，已停止写入。请先到恢复中心检查。');
@@ -322,6 +329,7 @@ class Engine {
     return path.join(journal.root, `.dlss5-${validId(journal.id)}-${index}${restore ? '-restore' : ''}.tmp`);
   }
   validateJournal(j, game) {
+    if (j.operation === 'launch-settings') return (this.launchSettings || new (require('./launch-settings.cjs').LaunchSettings)(this)).validate(j, game);
     if (j.schema !== 1 || j.gameId !== game.id || j.root !== path.dirname(game.exe) || !Array.isArray(j.changes) || !j.changes.length || j.changes.length > 8) fail('JOURNAL_INVALID', '恢复记录与当前游戏目录不一致，请保留备份。');
     const kept = j.retainedEnvironment || [];
     if (!Array.isArray(kept) || kept.length > 8 || (kept.length && j.operation !== 'uninstall')) fail('JOURNAL_INVALID', '共用运行环境记录无效。');
@@ -334,6 +342,7 @@ class Engine {
     for (const c of j.changes) { managedFile(c); validHash(c.before); validHash(c.after); if (seen.has(c.name.toLowerCase())) fail('JOURNAL_INVALID', '恢复记录重复。'); seen.add(c.name.toLowerCase()); }
   }
   async restore(journal, game) {
+    if (journal.operation === 'launch-settings') return (this.launchSettings || new (require('./launch-settings.cjs').LaunchSettings)(this)).restore(journal, game);
     this.validateJournal(journal, game);
     await assertGameRoot(journal.root, this.root);
     const env = await this.deps.environment(journal.root, game.exe);
@@ -389,7 +398,7 @@ class Engine {
         const shared = retainedEnvironment(j.afterInstalled?.files || [], report);
         if (shared.some(f => j.changes.some(c => c.name === f.name && c.before !== c.after))) fail('SHARED_ENVIRONMENT', '这次恢复会改动其他插件可能共用的运行环境。请改用“卸载我们的插件”，保留共用环境并撤销 NR。');
       }
-      const env = await this.deps.environment(j.root, game.exe);
+      const env = await this.deps.environment(j.root, j.operation==='launch-settings'?j.exe:game.exe);
       if (!env.verified || env.running.length) fail('GAME_RUNNING', '无法确认游戏已关闭。请完全退出游戏后再恢复。');
       await this.deps.locks(j.changes.map(c => path.join(j.root, c.name)));
       if (j.status === 'preparing') { j.status = 'aborted'; await atomicJson(this.journalPath(j.id), j); return { transactionId: j.id }; }
@@ -399,7 +408,7 @@ class Engine {
   }
   async diagnostic() {
     const history = await this.history();
-    return redact(JSON.stringify({ managerVersion: require('../../package.json').version, schema: 1, generatedAt: new Date().toISOString(), games: this.state.games.map(g => ({ id: g.id, api: g.api, kind: g.kind, installedVersion: g.installed?.version || null })), packages: this.state.packages.map(p => ({ version: p.manifest.version, hash: p.sourceHash, trust: p.trust })), transactions: history.map(j => ({ id: j.id, gameId: j.gameId, version: j.version, operation: j.operation, createdAt: j.createdAt, status: j.status, errorCode: j.errorCode, files: j.changes.map(c => ({ role: c.role, before: c.before, after: c.after, adopted: c.adopt })) })) }, null, 2), this.state.games.flatMap(g => [g.scanRoot, g.exe]));
+    return redact(JSON.stringify({ managerVersion: require('../../package.json').version, schema: 1, generatedAt: new Date().toISOString(), games: this.state.games.map(g => ({ id: g.id, api: g.api, apiSource:g.apiEvidence?.source||'unknown', kind: g.kind, installedVersion: g.installed?.version || null, launchRequests:Object.fromEntries(Object.entries(g.launchRequests||{}).map(([domain,row])=>[domain,row.request])), launchReadback:Object.fromEntries(Object.entries(g.launchApplied||{}).map(([domain,row])=>[domain,{backend:row.backend,phase:row.phase,runtimeVerified:false}])) })), packages: this.state.packages.map(p => ({ version: p.manifest.version, hash: p.sourceHash, trust: p.trust })), transactions: history.map(j => ({ id: j.id, gameId: j.gameId, version: j.version, operation: j.operation, domain:j.domain, backend:j.backend, createdAt: j.createdAt, status: j.status, errorCode: j.errorCode, files: j.changes.map(c => ({ role: c.role, before: c.before, after: c.after, adopted: c.adopt })) })) }, null, 2), this.state.games.flatMap(g => [g.scanRoot, g.exe]));
   }
 }
 module.exports = { Engine, allowedFile, copyDurable };

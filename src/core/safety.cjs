@@ -78,7 +78,15 @@ async function atomicJson(file, value) {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   await noLinks(file);
   const temp = `${file}.${crypto.randomUUID()}.tmp`;
-  try { await durableWrite(temp, JSON.stringify(value, null, 2), true); await fs.rename(temp, file); }
+  try {
+    await durableWrite(temp, JSON.stringify(value, null, 2), true);
+    // Windows metadata readers (including scanners) can briefly deny replace.
+    // Retry only our durable JSON rename, never bypass game-file lock checks.
+    for(let attempt=0;;attempt++){
+      try{await noLinks(file);await fs.rename(temp,file);break;}
+      catch(error){if(attempt>=3||!['EPERM','EACCES','EBUSY'].includes(error.code))throw error;await new Promise(resolve=>setTimeout(resolve,25*2**attempt));}
+    }
+  }
   finally { await fs.rm(temp, { force: true }); }
 }
 async function readJson(file, fallback) {

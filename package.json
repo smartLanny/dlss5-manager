@@ -1,6 +1,6 @@
 {
   "name": "zhuangjizhai-dlss5-manager",
-  "version": "0.2.0-beta.3",
+  "version": "0.3.0-beta.1",
   "description": "装机宅 DLSS5 安装器：独立、安全、可回滚的 NR before SR 插件管理器",
   "author": "装机宅",
   "license": "UNLICENSED",
@@ -11,8 +11,8 @@
   },
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/*.test.cjs",
-    "test:ui": "node scripts/smoke.cjs",
+    "test": "node --test test/*.test.cjs tests/*.test.cjs",
+    "test:ui": "node scripts/smoke.cjs && node scripts/smoke-launch-settings.cjs",
     "check": "node scripts/check.cjs",
     "build:win": "node scripts/icon.cjs && electron-builder --win nsis portable --x64 --publish never",
     "pack:addon": "node scripts/pack-addon.cjs",

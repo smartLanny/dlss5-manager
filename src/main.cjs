@@ -7,6 +7,7 @@ const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Engine } = require('./core/engine.cjs');
 const { PlayerService } = require('./core/player.cjs');
+const { LaunchSettings } = require('./core/launch-settings.cjs');
 const { registerFeedback } = require('./feedback-ipc.cjs');
 const { CATALOG } = require('./core/packages.cjs');
 const { discoverSteam, manualScanRoot } = require('./core/discovery.cjs');
@@ -14,17 +15,44 @@ const { discoverEpic } = require('./core/stores.cjs');
 const { artwork } = require('./core/artwork.cjs');
 const { download } = require('./core/network.cjs');
 const { peInfo } = require('./core/platform.cjs');
-const { fail, validId, inside, noLinks, assertGameRoot, friendlyError, durableWrite } = require('./core/safety.cjs');
+const { fail, validId, inside, noLinks, assertGameRoot, friendlyError, durableWrite, redact } = require('./core/safety.cjs');
 const VERSION = require('../package.json').version;
 const LINKS = Object.freeze({ bilibili: 'https://space.bilibili.com/941799', releases: 'https://github.com/smartLanny/dlss5-manager/releases', issues: 'https://github.com/smartLanny/dlss5-manager/issues', tutorial: 'https://space.bilibili.com/941799', reshade: 'https://reshade.me/' });
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.enableSandbox();
 if (!app.requestSingleInstanceLock()) app.quit();
-let win, engine, player, operationBusy = false, bundleError = null, waitController = null;
+let win, engine, player, launchSettings, operationBusy = false, bundleError = null, waitController = null;
 function progress(message) { if (win && !win.isDestroyed()) win.webContents.send('manager:progress', String(message).slice(0, 150)); }
 async function publicState() {
   const history = await engine.history();
-  return { version: VERSION, platform: process.platform, catalog: CATALOG, games: engine.state.games.map(g => ({ ...g, preferredPackages: { A: player.preferred(g, 'A')?.id || null, B: player.preferred(g, 'B')?.id || null } })), packages: engine.state.packages, history: history.map(j => ({ id: j.id, gameId: j.gameId, version: j.version, createdAt: j.createdAt, restoredAt: j.restoredAt, status: j.status, operation: j.operation, fileCount: j.changes.length, keptEnvironmentCount: j.retainedEnvironment?.length || 0 })), links: LINKS, bundleError, preferences: engine.state.preferences || {}, bundledCount: engine.state.packages.filter(p => p.distribution === 'bundled').length };
+  const games = engine.state.games.map(g => {
+    const { launchApplied, launchRequests, launchDriverOriginalProfile, ...visible } = g;
+    return { ...visible, preferredPackages: { A: player.preferred(g, 'A')?.id || null, B: player.preferred(g, 'B')?.id || null },
+      launchSettings: {
+        requests: Object.fromEntries(Object.entries(launchRequests || {}).map(([domain, row]) => [domain, { request: row.request, savedAt: row.savedAt }])),
+        applied: Object.fromEntries(Object.entries(launchApplied || {}).map(([domain, row]) => [domain, { backend: row.backend, request: row.request, phase: row.phase, runtimeVerified: false }]))
+      } };
+  });
+  return { version: VERSION, platform: process.platform, catalog: CATALOG, games, packages: engine.state.packages, history: history.map(j => ({ id: j.id, gameId: j.gameId, version: j.version, createdAt: j.createdAt, restoredAt: j.restoredAt, status: j.status, operation: j.operation, fileCount: j.changes.length, keptEnvironmentCount: j.retainedEnvironment?.length || 0 })), links: LINKS, bundleError, preferences: engine.state.preferences || {}, bundledCount: engine.state.packages.filter(p => p.distribution === 'bundled').length };
+}
+
+function publicLaunchInfo(info) {
+  return { hardware: info.hardware, runtimeVerified: false, note: info.note,
+    requests: Object.fromEntries(Object.entries(info.requests || {}).map(([domain, row]) => [domain, { request: row.request, savedAt: row.savedAt }])),
+    applied: Object.fromEntries(Object.entries(info.applied || {}).map(([domain, row]) => [domain, { backend: row.backend, request: row.request, phase: row.phase, runtimeVerified: false }])) };
+}
+
+async function prepareLaunch(gameId) {
+  progress('正在应用下次启动的图像设置');
+  const outcomes = await launchSettings.beforeLaunch(gameId);
+  if ((await engine.pending(gameId)).length) fail('RECOVERY_FIRST', '启动设置存在未安全恢复的操作。请先到恢复记录处理，暂不启动游戏。');
+  const failed = outcomes.filter(row => !row.applied && !row.unchanged && (row.code || row.reason));
+  if (!failed.length) return true;
+  const detail = failed.map(row => `${row.domain === 'sr' ? '超分辨率' : '帧生成'}：${row.reason || row.code}`).join('\n') +
+    '\n\n请求仍会保留到下次从管理器启动。继续启动不会把这些设置标记为已生效。';
+  const answer = await dialog.showMessageBox(win, { type: 'warning', message: '部分图像设置没有应用', detail,
+    buttons: ['取消启动', '仍然启动游戏'], defaultId: 0, cancelId: 0, noLink: true });
+  return answer.response === 1;
 }
 function senderAllowed(event) { return win && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame && event.senderFrame.url === 'app://ui/index.html'; }
 function handle(name, fn, mutates = false) {
@@ -34,7 +62,12 @@ function handle(name, fn, mutates = false) {
     if (mutates && operationBusy) return { ok: false, error: { code: 'BUSY', message: '正在处理，请稍候。' } };
     if (mutates) operationBusy = true;
     try { return { ok: true, value: await fn(payload || {}) }; }
-    catch (e) { const error = friendlyError(e); if (!name.startsWith('feedback-')) engine.lastEventCode = error.code; return { ok: false, error }; }
+    catch (e) {
+      const nativeSettingError = name.startsWith('launch-settings-') && typeof e?.code === 'string' &&
+        /^(?:NVAPI_|PROFILE_|UNSAFE_PROFILE$|INVALID_(?:EXE|SNAPSHOT|PROFILE_TARGET|RESTORE)|WINDOWS_REQUIRED$|UNSUPPORTED_SETTING(?:_LOCATION)?$)/.test(e.code);
+      const error = nativeSettingError ? { code:e.code, message:redact(String(e.message || '驱动设置操作失败。'), [engine.root]) } : friendlyError(e);
+      if (!name.startsWith('feedback-')) engine.lastEventCode = error.code; return { ok: false, error };
+    }
     finally { if (mutates) operationBusy = false; }
   });
 }
@@ -93,6 +126,11 @@ function registerHandlers() {
   handle('apply', ({ planId, consent }) => { progress('正在备份并安装'); return player.apply(planId, consent); }, true);
   handle('assign-ab', ({ gameId, a, b }) => player.assign(gameId, a, b), true);
   handle('details', async ({ gameId }) => { await player.identify(gameId); return engine.deps.scan(engine.game(gameId), engine.root); }, true);
+  handle('set-game-api', ({ gameId, api }) => player.setApi(gameId, api), true);
+  handle('launch-settings-inspect', async ({ gameId }) => publicLaunchInfo(await launchSettings.inspect(gameId)));
+  handle('launch-settings-save', ({ gameId, domain, request }) => launchSettings.save(gameId, domain, request), true);
+  handle('launch-settings-preview', ({ gameId, domain, request }) => launchSettings.preview(gameId, domain, request), true);
+  handle('launch-settings-apply', ({ planId }) => { progress('正在备份并应用启动设置'); return launchSettings.apply(planId, { confirm: true }); }, true);
   handle('uninstall', async ({ gameId }) => {
     const p = await engine.preview(gameId, null, 'uninstall');
     if (p.blockers.length) fail('UNINSTALL_BLOCKED', p.blockers.join('\n'));
@@ -111,6 +149,8 @@ function registerHandlers() {
   handle('launch', async ({ gameId }) => {
     const g = engine.game(gameId); await assertGameRoot(g.scanRoot, engine.root);
     if ((await engine.pending(g.id)).length) fail('RECOVERY_FIRST', '请先恢复上次未完成的操作。');
+    if (!await prepareLaunch(g.id)) return false;
+    if ((await engine.pending(g.id)).length) fail('RECOVERY_FIRST', '启动设置存在未完成的恢复，暂不启动游戏。');
     if (g.source === 'steam' && /^[0-9]{1,12}$/.test(g.steamId || '')) { await shell.openExternal(`steam://run/${g.steamId}`); return true; }
     if (!g.exe || !inside(g.scanRoot, g.exe)) fail('EXE_REQUIRED', '请先识别游戏运行程序。');
     const pe = await peInfo(g.exe); if (!pe.valid || pe.dll || pe.arch !== 'x64') fail('EXE_CHANGED', '游戏程序已经变化，请重新添加。');
@@ -146,14 +186,14 @@ app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(
 app.on('window-all-closed', () => app.quit());
 app.whenReady().then(async () => {
   if (!app.isPackaged && process.env.DLSS5_TEST_USER_DATA) app.setPath('userData', process.env.DLSS5_TEST_USER_DATA);
-  engine = await new Engine(path.join(app.getPath('userData'), 'manager-data')).init(); player = new PlayerService(engine);
+  engine = await new Engine(path.join(app.getPath('userData'), 'manager-data')).init(); player = new PlayerService(engine); launchSettings = new LaunchSettings(engine);
   try { await player.bundled(app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', 'resources')); } catch (e) { bundleError = friendlyError(e).message; }
   protocol.handle('app', async request => {
     try {
       const u = new URL(request.url);
       if (u.hostname === 'cover') { const g = engine.game(u.pathname.slice(1)); const b = await artwork(g, engine.root, nativeImage, engine.state.preferences?.onlineArtwork !== false); return b ? new Response(b, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache' } }) : new Response('', { status: 404 }); }
       const file = decodeURIComponent(u.pathname).slice(1);
-      if (u.hostname !== 'ui' || !['index.html', 'app.css', 'app.js', 'feedback.js', 'feedback.css'].includes(file)) return new Response('', { status: 404 });
+      if (u.hostname !== 'ui' || !['index.html', 'app.css', 'app.js', 'launch-settings.css', 'feedback.js', 'feedback.css'].includes(file)) return new Response('', { status: 404 });
       return net.fetch(pathToFileURL(path.join(__dirname, 'ui', file)).toString());
     } catch { return new Response('', { status: 404 }); }
   });
