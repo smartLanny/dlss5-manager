@@ -1,5 +1,7 @@
 # Repository scope
 
+This repository is frozen. Do not add features, releases, or migrations here. Continuing Manager development belongs in `smartLanny/DLSS5-Manager-ZJZ` (local checkout `D:\ChatGPT\DLSS5\manager-0.5-complete-integration-20260917`). Keep this tree as historical 0.3 installer source.
+
 This is the independent DLSS5 Manager repository only. Do not read, copy, modify or infer the private rendering implementation, unpublished runtime artifacts, internal paths or protected component source. The manager depends only on the public versioned file/package contract in docs/PACKAGE-CONTRACT.md.
 
 Never add private source, unpublished addons/runtime DLLs, game contents, user paths, credentials or signing private keys to this repository or public artifacts. Authorized release binaries may be explicitly staged by the publisher through the distribution contract; do not fetch them from private research repositories. The default public build contains no NR binaries. Tests use synthetic files and never execute them. Keep fixture output under ignored test-results; application release files are explicitly allowlisted.

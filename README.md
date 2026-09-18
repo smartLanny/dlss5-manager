@@ -1,5 +1,7 @@
 # 装机宅 DLSS5 安装器
 
+**本仓库已冻结。** 0.5 桌面管理器改在 [DLSS5-Manager-ZJZ](https://github.com/smartLanny/DLSS5-Manager-ZJZ) 继续开发。这里只保留 0.3 安装器历史，不再合新功能。说明见 [docs/FROZEN.md](docs/FROZEN.md)。
+
 **0.3 Beta · Windows x64 · 游戏海报库、自动识别、插件版本切换**
 
 [下载](https://github.com/smartLanny/dlss5-manager/releases) · [装机宅主页与教程](https://space.bilibili.com/941799) · [反馈](https://github.com/smartLanny/dlss5-manager/issues)
