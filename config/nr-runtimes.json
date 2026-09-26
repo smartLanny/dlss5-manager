@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "componentId": "nr-runtime",
+  "fileName": "nvngx_dlssnr.dll",
+  "disclaimer": "Third-party guest packs. Not official NVIDIA. A matching SHA-256 proves file bytes only, not publisher identity, license, redistribution rights, or game compatibility. Channel is local until an authorized OTA source exists. No download URLs are declared here.",
+  "selection": {
+    "mode": "explicit",
+    "autoDetectGpuFamily": false
+  },
+  "candidates": [
+    {
+      "id": "4050",
+      "label": "4050",
+      "gpuFamily": "40-50",
+      "gpuFamilyLabel": "40/50 系",
+      "role": "primary",
+      "defaultForFamily": true,
+      "channel": "local",
+      "origin": "guest",
+      "verification": "unverified",
+      "license": {
+        "name": "Third-party guest pack",
+        "redistribution": "not-declared"
+      },
+      "file": {
+        "path": "nvngx_dlssnr.dll",
+        "role": "nr-runtime",
+        "size": 165840496,
+        "sha256": "24f2d48e83ee636c8efc05056bbed61daf91bc35e490198485929ebd0d824dd2"
+      },
+      "notes": "内测 50 系优化版。guest / unverified / local。可按现行 256 MiB 单文件上限打进标准包。"
+    },
+    {
+      "id": "2030",
+      "label": "2030",
+      "gpuFamily": "20-30",
+      "gpuFamilyLabel": "20/30 系",
+      "role": "primary",
+      "defaultForFamily": true,
+      "channel": "local",
+      "origin": "guest",
+      "verification": "unverified",
+      "license": {
+        "name": "Third-party guest pack",
+        "redistribution": "not-declared"
+      },
+      "file": {
+        "path": "nvngx_dlssnr.dll",
+        "role": "nr-runtime",
+        "size": 309671536,
+        "sha256": "6dac1b40f0c87af84a8177b18c741e84fb0c914f204c9d87d95916b665ba3af8"
+      },
+      "transport": {
+        "kind": "zip",
+        "name": "nvngx_dlssnr_plainfp16.zip",
+        "sha256": "21ac9102fd98e147693925f76f773f5390a1003e782a8dfe210c8e737954e3fc"
+      },
+      "notes": "内测 20/30 系 guest 运行库。约 295 MiB，超过现行单文件 256 MiB 上限，标准 .dlss5pkg 暂不能打入。哈希钉供识别与后续契约修订。"
+    },
+    {
+      "id": "4050-candidate",
+      "label": "4050 候选",
+      "gpuFamily": "40-50",
+      "gpuFamilyLabel": "40/50 系",
+      "role": "parked",
+      "defaultForFamily": false,
+      "channel": "local",
+      "origin": "guest",
+      "verification": "unverified",
+      "license": {
+        "name": "Third-party guest pack",
+        "redistribution": "not-declared"
+      },
+      "file": {
+        "path": "nvngx_dlssnr.dll",
+        "role": "nr-runtime",
+        "size": 165840496,
+        "sha256": "f95feb54137ea11979f9b4ec4f00afd84b5c98a5624d3388fbf6a87714a39fcc"
+      },
+      "notes": "310.8.3 / root 候选。parked，非默认。仅在显式 --runtime-id 4050-candidate 时使用。"
+    }
+  ]
+}

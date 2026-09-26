@@ -8,7 +8,7 @@
 
 可选 `managerMaxVersion` 为包含端点的最大版本。版本采用 2–4 段数字及可选预发布标记，兼容 `0.3.3.4` / `0.3.8beta`；不支持通用 semver 表达式、通配符或任意范围语言。未知格式拒绝，不猜测。
 
-每个文件须有 `path`、`role`、`sha256`、`size`，严格对照内容校验。当前写入仍只允许一个 addon 和可选的 NR runtime；不能将 ReShade、系统 DLL 或任意资源伪装成已授权组件。配置资源、多组件独立安装和联网更新源尚未开放。
+每个文件须有 `path`、`role`、`sha256`、`size`，严格对照内容校验。当前写入仍只允许一个 addon 和可选的 NR runtime；不能将 ReShade、系统 DLL 或任意资源伪装成已授权组件。配置资源、多组件独立安装和联网更新源尚未开放。guest NR runtime 哈希钉见 `config/nr-runtimes.json`：只用于识别与显式 `--runtime-id` 核对，不是官方 NVIDIA 来源，也不是再分发批准。按 GPU 族自动挑选尚未开放。2030 钉超过现行 256 MiB 单文件上限，不能写入 v2 包。
 
 依赖每项含 `componentId`（reshade/nr-runtime）、可选 `minVersion` / `maxVersion`、必填 `capabilities` 数组（允许 addon-support 或空数组）。须由扫描器或审定目录提供真实匹配证据；清单本身、产品名和人工勾选不产生证据。审定目录当前为空，无法证明的依赖会阻止安装。空依赖数组表示未声明附加约束，不代表已经证明运行环境兼容。
 

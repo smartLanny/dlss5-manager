@@ -4,6 +4,7 @@ const path = require('node:path');
 const { fail, assertGameRoot, noLinks, digestFile, inside } = require('./safety.cjs');
 const { PROXIES, peInfo, metadata, environment } = require('./platform.cjs');
 const { loaderStatus } = require('./loader.cjs');
+const { matchRuntime, runtimeScanFields } = require('./nr-runtime.cjs');
 const { walk, ONLINE_IDS, AUXILIARY } = require('./discovery.cjs');
 async function scanGame(game, storeRoot) {
   const root = await assertGameRoot(game.scanRoot, storeRoot);
@@ -28,7 +29,9 @@ async function scanGame(game, storeRoot) {
       const proxy = PROXIES.has(f.name.toLowerCase());
       const approvedLoader = require('../../config/loader-evidence.json').some(k => k.sha256 === hash && k.architecture === pe?.arch);
       const componentId = approvedLoader || receipt?.role === 'reshade-loader' ? 'reshade' : /^sl\./i.test(f.name) ? 'streamline' : /reshade/i.test(source) ? 'reshade' : source === 'DXVK' ? 'dxvk' : source === 'ENB' ? 'enb' : f.name.toLowerCase() === 'nvngx_dlssnr.dll' ? 'nr-runtime' : owned && /\.addon64$/i.test(f.name) ? 'nr-before-sr' : null;
-      files.push({ ...f, componentId, ownership: owned ? 'manager-owned' : source === '来源待确认' ? 'unknown' : 'known-third-party', arch: pe?.arch || '不适用', imports: pe?.imports || [], sha256: hash, version: m.version || '未提供', signature: m.signature || '未能验证', signer: m.signer || '', description: m.description || '', source, owned, shared: owned ? '运行时使用仍需检查' : '可能由游戏或其他工具使用', risk: proxy && !/reshade/i.test(source) ? 'high' : owned ? 'low' : 'warning', proxy, loaderCandidate: proxy || /\.asi$/i.test(f.name) });
+      const pin = componentId === 'nr-runtime' ? matchRuntime({ sha256: hash, size: f.size }) : null;
+      const identified = pin ? runtimeScanFields(pin) : {};
+      files.push({ ...f, componentId, ownership: owned ? 'manager-owned' : (identified.ownership || (source === '来源待确认' ? 'unknown' : 'known-third-party')), arch: pe?.arch || '不适用', imports: pe?.imports || [], sha256: hash, version: m.version || '未提供', signature: m.signature || '未能验证', signer: m.signer || '', description: m.description || '', source: identified.source || source, owned, shared: owned ? '运行时使用仍需检查' : '可能由游戏或其他工具使用', risk: proxy && !/reshade/i.test(identified.source || source) ? 'high' : owned ? 'low' : 'warning', proxy, loaderCandidate: proxy || /\.asi$/i.test(f.name), ...(pin ? { runtimePin: identified.runtimePin } : {}) });
     } catch { result.problems.push('部分组件读取或哈希失败'); }
   }
   const env = await environment(targetRoot, game.exe), blockers = [], riskWarnings = [];

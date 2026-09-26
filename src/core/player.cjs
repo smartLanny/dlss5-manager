@@ -5,6 +5,7 @@ const { fail, sha256, leaf, noLinks, digestFile, readJson } = require('./safety.
 const { detectGame, API_DLL } = require('./detection.cjs');
 const { importPackage } = require('./packages.cjs');
 const { compareVersions } = require('./components.cjs');
+const { packageRuntimePin } = require('./nr-runtime.cjs');
 const { ensureReShade, loaderName } = require('./reshade.cjs');
 const { runningGame, peInfo } = require('./platform.cjs');
 class PlayerService {
@@ -21,6 +22,8 @@ class PlayerService {
     if (existing) { // Cache cleanup is limited to the newly created, never-installed package ID.
       await fs.rm(path.join(this.engine.root, 'packages', pkg.id), { recursive: true, force: true }); return existing;
     }
+    const runtimePin = packageRuntimePin(pkg.manifest);
+    if (runtimePin) pkg.runtimePin = runtimePin;
     this.engine.state.packages.push(pkg); await this.engine.save(); return pkg;
   }
   async bundled(resources) {

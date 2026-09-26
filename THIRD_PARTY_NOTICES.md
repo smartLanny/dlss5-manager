@@ -8,6 +8,10 @@
 
 实际提取行为由 .github/workflows/verify-reshade.yml 和 scripts/test-official-runtime.cjs 验证。哈希用于内容完整性，不冒充发布者数字签名，也不代表 NR 游戏兼容性已经验证。
 
+## Guest NR runtime 目录钉
+
+`config/nr-runtimes.json` 只保存第三方 guest `nvngx_dlssnr.dll` 的大小与 SHA-256，供识别和本地打包核对。这些钉 **不是 NVIDIA 官方运行库**，公共仓库与默认构建不包含对应二进制，也未声明再分发或下载地址。哈希匹配只证明字节，不证明发布者身份或游戏兼容。
+
 ## 产品和实现参考
 
 - DLSS5-Swapper：https://github.com/rakanki911/DLSS5-Swapper ，MIT；参考游戏发现的 import/delay-load/engine-DLL 分层、海报及单游戏操作设计。

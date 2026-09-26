@@ -26,7 +26,7 @@
 
 ## 离线打包工具
 
-运行 `npm run pack:addon --` 后，添加 `--addon` 输入文件、`--version` 版本、`--api` API、`--out` 输出包四个参数。可选 `--runtime` 提供发布者有权分发的 runtime。工具仅读取明确输入的文件，生成包和相邻 SHA-256 清单，不进行网络发布，不覆盖已有输出文件。真实分发文件不要放进此公开仓库。
+运行 `npm run pack:addon --` 后，添加 `--addon` 输入文件、`--version` 版本、`--api` API、`--out` 输出包四个参数。可选 `--runtime` 提供发布者有权分发的 runtime。可选 `--runtime-id` 按 `config/nr-runtimes.json` 核验该文件的名称、大小和 SHA-256；当前登记的是 guest / unverified / local 候选，哈希匹配不代表 NVIDIA 来源或再分发授权。工具仅读取明确输入的文件，生成包和相邻 SHA-256 清单，不进行网络发布，不覆盖已有输出文件。真实分发文件不要放进此公开仓库。2030 guest runtime 超过单文件 256 MiB 上限，现行标准包不能打入；打包步骤见 docs/NR-RUNTIMES.md。
 
 ## 签名与信任
 

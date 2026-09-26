@@ -162,4 +162,4 @@ async function importPackage(file, options, cacheRoot, trustedKeys = {}) {
   catch (e) { await fs.rm(dir, { recursive: true, force: true }); throw e; }
   return { id, manifest, ...(componentManifest ? { componentManifest } : {}), sourceHash, trust, importedAt: new Date().toISOString(), compatibility: '待验证' };
 }
-module.exports = { guessVersion, archiveName, CATALOG, MAX_PACKAGE, versionName, canonical, crc32, readZip, writeZip, peBytes, validateManifest, importPackage };
+module.exports = { guessVersion, archiveName, CATALOG, MAX_FILE, MAX_PACKAGE, versionName, canonical, crc32, readZip, writeZip, peBytes, validateManifest, importPackage };
