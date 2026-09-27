@@ -11,10 +11,13 @@ const {
   describeRuntime, packageRuntimePin, runtimeScanFields
 } = require('../src/core/nr-runtime.cjs');
 const { MAX_FILE } = require('../src/core/packages.cjs');
-const HASH_4050 = '24f2d48e83ee636c8efc05056bbed61daf91bc35e490198485929ebd0d824dd2';
+const HASH_4050 = 'a2d16f9fba2b619559427821169918df56fc8e410a6ac87569953598a00b66fa';
+const HASH_4050_PREV = '24f2d48e83ee636c8efc05056bbed61daf91bc35e490198485929ebd0d824dd2';
 const HASH_2030 = '6dac1b40f0c87af84a8177b18c741e84fb0c914f204c9d87d95916b665ba3af8';
 const HASH_4050_CANDIDATE = 'f95feb54137ea11979f9b4ec4f00afd84b5c98a5624d3388fbf6a87714a39fcc';
 const HASH_2030_ZIP = '21ac9102fd98e147693925f76f773f5390a1003e782a8dfe210c8e737954e3fc';
+const HASH_4050_ZIP = 'c3b8fd6a9b2784f9f0325ab8228ea6289dee63245315b43c624ad1a94909f1f6';
+const SIZE_4050 = 165844992;
 function clone() { return structuredClone(require('../config/nr-runtimes.json')); }
 function pack(args) {
   return spawnSync(process.execPath, ['scripts/pack-addon.cjs', ...args], { encoding: 'utf8', cwd: path.resolve('.') });
@@ -28,18 +31,27 @@ test('shipped catalog pins 2030 and 4050 as guest local unverified runtimes', ()
   assert.match(catalog.disclaimer, /not official nvidia/i);
   assert.equal(JSON.stringify(catalog).includes('http'), false);
   const byId = Object.fromEntries(catalog.candidates.map(p => [p.id, p]));
-  assert.equal(byId['4050'].file.size, 165840496);
+  assert.equal(byId['4050'].file.size, SIZE_4050);
   assert.equal(byId['4050'].file.sha256, HASH_4050);
+  assert.equal(byId['4050'].label, 'Kio v1.0.6');
   assert.equal(byId['4050'].gpuFamily, '40-50');
+  assert.equal(byId['4050'].gpuFamilyLabel, 'RTX 40/50');
   assert.equal(byId['4050'].defaultForFamily, true);
   assert.equal(byId['4050'].origin, 'guest');
   assert.equal(byId['4050'].verification, 'unverified');
   assert.equal(byId['4050'].channel, 'local');
   assert.equal(byId['4050'].license.redistribution, 'not-declared');
+  assert.equal(byId['4050'].transport.name, 'DLSSNR-RTX40-50-Kio-v1.0.6.zip');
+  assert.equal(byId['4050'].transport.size, 119854342);
+  assert.equal(byId['4050'].transport.sha256, HASH_4050_ZIP);
   assert.equal(byId['2030'].file.size, 309671536);
   assert.equal(byId['2030'].file.sha256, HASH_2030);
   assert.equal(byId['2030'].gpuFamily, '20-30');
   assert.equal(byId['2030'].transport.sha256, HASH_2030_ZIP);
+  assert.equal(byId['4050-prev'].file.size, 165840496);
+  assert.equal(byId['4050-prev'].file.sha256, HASH_4050_PREV);
+  assert.equal(byId['4050-prev'].role, 'parked');
+  assert.equal(byId['4050-prev'].defaultForFamily, false);
   assert.equal(byId['4050-candidate'].file.sha256, HASH_4050_CANDIDATE);
   assert.equal(byId['4050-candidate'].role, 'parked');
   assert.equal(byId['4050-candidate'].defaultForFamily, false);
@@ -48,19 +60,23 @@ test('shipped catalog pins 2030 and 4050 as guest local unverified runtimes', ()
   assert.equal(packability(byId['2030']).packableInV1, false);
   assert.throws(() => assertPackable(byId['2030']), e => e.code === 'RUNTIME_TOO_LARGE');
   assert.match(describeRuntime(byId['4050-candidate']), /非默认/);
+  assert.match(describeRuntime(byId['4050-prev']), /非默认/);
+  assert.match(describeRuntime(byId['4050']), /Kio v1\.0\.6/);
   assert.match(describeRuntime(byId['4050']), /非 NVIDIA 官方/);
   assert.doesNotMatch(describeRuntime(byId['4050']), /官方 NVIDIA 运行库/);
 });
 
 test('explicit runtime-id checks sha256 and refuses unknown or mismatched files', () => {
   const pin = requirePin('4050');
-  assert.equal(matchRuntime({ sha256: HASH_4050, size: 165840496 }).id, '4050');
+  assert.equal(pin.file.sha256, HASH_4050);
+  assert.equal(matchRuntime({ sha256: HASH_4050, size: SIZE_4050 }).id, '4050');
+  assert.equal(matchRuntime({ sha256: HASH_4050_PREV, size: 165840496 }).id, '4050-prev');
   assert.equal(matchRuntime({ sha256: HASH_2030 }).id, '2030');
   assert.equal(matchRuntime({ sha256: '0'.repeat(64) }), null);
   assert.throws(() => requirePin('missing'), e => e.code === 'RUNTIME_UNKNOWN');
   assert.throws(() => matchRuntime({ sha256: HASH_4050, size: 1 }), e => e.code === 'RUNTIME_MISMATCH');
   assert.throws(() => assertRuntimeMatches({ path: 'nvngx_dlssnr.dll', sha256: HASH_4050, size: 1 }, pin), e => e.code === 'RUNTIME_MISMATCH');
-  assert.throws(() => assertRuntimeMatches({ path: 'other.dll', sha256: HASH_4050, size: 165840496 }, pin), e => e.code === 'RUNTIME_MISMATCH');
+  assert.throws(() => assertRuntimeMatches({ path: 'other.dll', sha256: HASH_4050, size: SIZE_4050 }, pin), e => e.code === 'RUNTIME_MISMATCH');
   assert.equal(packageRuntimePin({ files: [{ role: 'nr-runtime', sha256: HASH_2030, size: 309671536 }] }).id, '2030');
   assert.equal(packageRuntimePin({ files: [{ role: 'addon', sha256: HASH_4050 }] }), null);
   const fields = runtimeScanFields(requirePin('4050-candidate'));

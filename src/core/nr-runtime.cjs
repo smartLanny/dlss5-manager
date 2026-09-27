@@ -48,8 +48,9 @@ function loadCatalog(raw = CATALOG) {
     if (leaf(pin.file.path) !== raw.fileName || pin.file.role !== 'nr-runtime' || !HASH.test(pin.file.sha256) || hashes.has(pin.file.sha256)) fail('RUNTIME_CATALOG', '运行库文件名或哈希钉无效。');
     if (!Number.isSafeInteger(pin.file.size) || pin.file.size < 64) fail('RUNTIME_CATALOG', '运行库大小无效。');
     if (pin.transport !== undefined) {
-      fields(pin.transport, ['kind', 'name', 'sha256'], '运行库传输钉');
+      fields(pin.transport, ['kind', 'name', 'sha256', 'size'], '运行库传输钉');
       if (pin.transport.kind !== 'zip' || leaf(pin.transport.name) !== pin.transport.name || !HASH.test(pin.transport.sha256)) fail('RUNTIME_CATALOG', '运行库传输钉无效。');
+      if (pin.transport.size !== undefined && (!Number.isSafeInteger(pin.transport.size) || pin.transport.size < 64)) fail('RUNTIME_CATALOG', '运行库传输钉大小无效。');
     }
     if (!text(pin.notes, 240) || nvidiaClaim(pin.notes) || nvidiaClaim(pin.label) || nvidiaClaim(pin.license.name)) fail('RUNTIME_CATALOG', '运行库说明不能声称 NVIDIA 官方来源。');
     ids.add(pin.id); hashes.add(pin.file.sha256);

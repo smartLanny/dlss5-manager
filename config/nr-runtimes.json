@@ -10,9 +10,9 @@
   "candidates": [
     {
       "id": "4050",
-      "label": "4050",
+      "label": "Kio v1.0.6",
       "gpuFamily": "40-50",
-      "gpuFamilyLabel": "40/50 系",
+      "gpuFamilyLabel": "RTX 40/50",
       "role": "primary",
       "defaultForFamily": true,
       "channel": "local",
@@ -25,10 +25,16 @@
       "file": {
         "path": "nvngx_dlssnr.dll",
         "role": "nr-runtime",
-        "size": 165840496,
-        "sha256": "24f2d48e83ee636c8efc05056bbed61daf91bc35e490198485929ebd0d824dd2"
+        "size": 165844992,
+        "sha256": "a2d16f9fba2b619559427821169918df56fc8e410a6ac87569953598a00b66fa"
       },
-      "notes": "内测 50 系优化版。guest / unverified / local。可按现行 256 MiB 单文件上限打进标准包。"
+      "transport": {
+        "kind": "zip",
+        "name": "DLSSNR-RTX40-50-Kio-v1.0.6.zip",
+        "size": 119854342,
+        "sha256": "c3b8fd6a9b2784f9f0325ab8228ea6289dee63245315b43c624ad1a94909f1f6"
+      },
+      "notes": "Kio v1.0.6「性能更强」。guest / unverified / local。可按现行 256 MiB 单文件上限打进标准包。"
     },
     {
       "id": "2030",
@@ -78,6 +84,28 @@
         "sha256": "f95feb54137ea11979f9b4ec4f00afd84b5c98a5624d3388fbf6a87714a39fcc"
       },
       "notes": "310.8.3 / root 候选。parked，非默认。仅在显式 --runtime-id 4050-candidate 时使用。"
+    },
+    {
+      "id": "4050-prev",
+      "label": "4050 前主钉",
+      "gpuFamily": "40-50",
+      "gpuFamilyLabel": "40/50 系",
+      "role": "parked",
+      "defaultForFamily": false,
+      "channel": "local",
+      "origin": "guest",
+      "verification": "unverified",
+      "license": {
+        "name": "Third-party guest pack",
+        "redistribution": "not-declared"
+      },
+      "file": {
+        "path": "nvngx_dlssnr.dll",
+        "role": "nr-runtime",
+        "size": 165840496,
+        "sha256": "24f2d48e83ee636c8efc05056bbed61daf91bc35e490198485929ebd0d824dd2"
+      },
+      "notes": "前 4050 主钉，已降为 parked / 非默认。仅在显式 --runtime-id 4050-prev 时使用。"
     }
   ]
 }

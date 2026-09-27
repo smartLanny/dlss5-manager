@@ -13,7 +13,7 @@ async function main() {
     if (!['--addon', '--runtime', '--runtime-id', '--version', '--api', '--out', '--sign-key', '--key-id', '--component-manifest'].includes(args[i]) || !args[i + 1]) throw new Error('参数不完整或未知。');
     opts[args[i].slice(2)] = args[i + 1];
   }
-  if (!opts.addon || !opts.version || !opts.api || !opts.out) throw new Error('用法：npm run pack:addon -- --addon /本地/插件.addon64 --version 0.4.2beta --api DX12 --out /私下发布/0.4.2beta.dlss5pkg [--runtime /本地/nvngx_dlssnr.dll] [--runtime-id 4050|2030|4050-candidate] [--sign-key /私有/ed25519.pem --key-id publisher-1]');
+  if (!opts.addon || !opts.version || !opts.api || !opts.out) throw new Error('用法：npm run pack:addon -- --addon /本地/插件.addon64 --version 0.4.2beta --api DX12 --out /私下发布/0.4.2beta.dlss5pkg [--runtime /本地/nvngx_dlssnr.dll] [--runtime-id 4050|2030|4050-prev|4050-candidate] [--sign-key /私有/ed25519.pem --key-id publisher-1]');
   if (opts['runtime-id'] && !opts.runtime) throw new Error('指定 --runtime-id 时必须同时提供 --runtime 本地文件。');
   const entries = [], files = [];
   for (const [input, role] of [[opts.addon, 'addon'], [opts.runtime, 'nr-runtime']]) {
